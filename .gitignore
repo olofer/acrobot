@@ -1,0 +1,2 @@
+test-octave/*.mex*
+./browser_sim.wasm
