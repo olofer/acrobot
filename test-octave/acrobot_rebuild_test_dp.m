@@ -25,3 +25,4 @@ disp('calling DP solver..');
 
 disp(size(V));
 disp(size(A));
+disp(prod(size(V)));

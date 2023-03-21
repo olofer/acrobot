@@ -3,6 +3,10 @@
  *
  */
 
+// TODO: need the develop the neccessary equation/stencil for the evolution rule to be used
+//       parameters include "dt" and "sigma" and the dynamics "dotted state" function
+// TODO: also figure out correct treatment of periodic state variables and absorbing state variables
+
 #include "mex.h"
 #include <cstring>
 #include <cmath>
@@ -19,12 +23,14 @@ public:
             int nth2, 
             int ndot1, 
             int ndot2) : 
-  grid_th1(nth1), grid_th2(nth2), grid_th1d(ndot1), grid_th2d(ndot2),
-  value(nth1 * nth2 * ndot1 * ndot2), action(nth1 * nth2 * ndot1 * ndot2)
+  grid_th1(nth1), 
+  grid_th2(nth2), 
+  grid_th1d(ndot1), 
+  grid_th2d(ndot2),
+  value(nth1 * nth2 * ndot1 * ndot2), 
+  action(nth1 * nth2 * ndot1 * ndot2), 
+  dims{nth1, nth2, ndot1, ndot2}
   {
-    // fill in the grid locations
-    // allocate the cell 4D space; and initialize it to zeros or "nans"
-    // prepare convenience indexing factors
   }
 
   ~acrobotDP() {}
@@ -33,11 +39,35 @@ public:
   int getN2() const { return grid_th2.size(); }
   int getN1D() const { return grid_th1d.size(); }
   int getN2D() const { return grid_th2d.size(); }
-
   int size() const { return value.size(); }
+  int dim(int i) const { return dims[i]; }
+  int sub2ind(const int* i) const { return sub2ind(i[0], i[1], i[2], i[3]); }
+  int sub2ind(int i0, int i1, int i2, int i3) const {
+    //return i0 + dims[0] * i1 + dims[0] * dims[1] * i2 + dims[0] * dims[1] * dims[2] * i3;
+    return i0 + dims[0] * (i1 + dims[1] * (i2 + dims[2] * i3));
+  }
+  void ind2sub(int idx, int* i) const {
+    i[0] = idx % dims[0];
+    idx = (idx - i[0]) / dims[0];
+    i[1] = idx % dims[1];
+    idx = (idx - i[1]) / dims[1];
+    i[2] = idx % dims[2];
+    idx = (idx - i[2]) / dims[2];
+    i[3] = idx; 
+  }
+  bool check_ind2sub2ind() const {
+    int indices[4];
+    for (int k = 0; k < size(); k++) {
+      ind2sub(k, indices);
+      if (k != sub2ind(indices))
+        return false;
+    }
+    return true;
+  }
 
   int initilize() {
     // set terminal cost ; the value is just the number of time-steps to-go until done
+    // the action array A can signal whether there has been any value assigned at a cell
     return 0;
   }
 
@@ -51,6 +81,8 @@ private:
   std::vector<double> grid_th2;
   std::vector<double> grid_th1d;
   std::vector<double> grid_th2d;
+
+  int dims[4];
 
   std::vector<float> value;
   std::vector<int8_t> action;
@@ -92,13 +124,30 @@ void mexFunction(int nlhs,
   //double* ptrdz = (double *) mxGetPr(plhs[0]);
   //acrobot::calculate_dotted_state(ptrdz, time, ptrz, &P);
 
-  acrobotDP acbdp(9, 10, 11, 12);
+  acrobotDP acbdp(32, 31, 30, 29);
 
   mexPrintf("num. cells = %i\n", acbdp.size());
+  mexPrintf("dims = %i,%i,%i,%i\n", acbdp.dim(0), acbdp.dim(1), acbdp.dim(2), acbdp.dim(3));
+
+  if (!acbdp.check_ind2sub2ind()) {
+    mexErrMsgTxt("Self-check of ind2sub, sub2ind failed");
+  }
+  
+  acbdp.initilize();
 
   const mwSize dims[4] = {acbdp.getN1(), acbdp.getN2(), acbdp.getN1D(), acbdp.getN2D()};
   plhs[0] = mxCreateNumericArray(4, dims, mxDOUBLE_CLASS, mxREAL);
   plhs[1] = mxCreateNumericArray(4, dims, mxDOUBLE_CLASS, mxREAL);
+
+  double* V = (double*) mxGetPr(plhs[0]);
+  double* A = (double*) mxGetPr(plhs[1]);
+
+  for (int k = 0; k < acbdp.size(); k++) {
+    int indices[4];
+    acbdp.ind2sub(k, indices);
+    V[acbdp.sub2ind(indices[0], indices[1], indices[2], indices[3])] = (double) k;
+    A[acbdp.sub2ind(indices[0], indices[1], indices[2], indices[3])] = (double) (acbdp.size() - k - 1);
+  }
 
   return;
 }
