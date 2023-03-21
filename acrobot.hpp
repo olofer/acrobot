@@ -210,8 +210,3 @@ double total_mechanical_energy(const double* z,
 }
 
 } // end namespace acrobot
-
-/*
-#if defined(HAVE_OCTAVE) || defined(MATLAB_MEX_FILE)
-#endif
-*/
