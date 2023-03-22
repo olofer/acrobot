@@ -16,13 +16,17 @@
 
 #include <vector>
 
+const double _one_pi = 3.14159265358979323846;
+
 class acrobotDP
 {
 public:
   acrobotDP(int nth1, 
             int nth2, 
             int ndot1, 
-            int ndot2) : 
+            int ndot2,
+            double maxdot1 = 1.0,
+            double maxdot2 = 1.0) : 
   grid_th1(nth1), 
   grid_th2(nth2), 
   grid_th1d(ndot1), 
@@ -31,6 +35,18 @@ public:
   action(nth1 * nth2 * ndot1 * ndot2), 
   dims{nth1, nth2, ndot1, ndot2}
   {
+    for (int i = 0; i < nth1; i++) {
+      grid_th1[i] = (2.0 * _one_pi * i) / nth1; 
+    }
+    for (int i = 0; i < nth2; i++) {
+      grid_th2[i] = (2.0 * _one_pi * i) / nth2; 
+    }
+    for (int i = 0; i < ndot1; i++) {
+      grid_th1d[i] = -maxdot1 + (2.0 * maxdot1 * i) / (ndot1 - 1);
+    }
+    for (int i = 0; i < ndot2; i++) {
+      grid_th2d[i] = -maxdot2 + (2.0 * maxdot2 * i) / (ndot2 - 1);
+    }
   }
 
   ~acrobotDP() {}
@@ -65,6 +81,35 @@ public:
     return true;
   }
 
+  double errsq(const acrobot::params* P, // given P->u provided control value
+               const double* xsource, 
+               const double* xtarget, 
+               double dt,
+               const double* sigma) const
+  {
+    // Use trapezoidal transcription equation to assess the "fitness" of the source and target states w.r.t. dynamics
+    double deltx[4] = {xtarget[0] - xsource[0], xtarget[1] - xsource[1], xtarget[2] - xsource[2], xtarget[3] - xsource[3]};
+    if (deltx[0] < -_one_pi) deltx[0] += 2.0 * _one_pi;
+    if (deltx[0] > _one_pi)  deltx[0] -= 2.0 * _one_pi;
+    if (deltx[1] < -_one_pi) deltx[1] += 2.0 * _one_pi;
+    if (deltx[1] > _one_pi)  deltx[1] -= 2.0 * _one_pi;
+
+    const double dummytime = 0.0;
+    double dotx0[4] = {0.0, 0.0, 0.0, 0.0};
+    acrobot::calculate_dotted_state(dotx0, dummytime, xsource, P);
+    double dotx1[4] = {0.0, 0.0, 0.0, 0.0};
+    acrobot::calculate_dotted_state(dotx1, dummytime, xtarget, P);
+
+    double errsq = 0.0;
+    for (int i = 0; i < 4; i++) {
+      const double wi = deltx[i] - 0.5 * dt * (dotx0[i] + dotx1[i]);
+      errsq += wi * wi / (sigma[i] * sigma[i] * dt);
+    }
+    return errsq;
+  }
+
+  // FIXME: member function that evaluates all control options across all neighbor target lattice points from a given source lattice point
+
   int initilize() {
     // set terminal cost ; the value is just the number of time-steps to-go until done
     // the action array A can signal whether there has been any value assigned at a cell
@@ -75,6 +120,8 @@ public:
     // run a single scan across the cells; update values where it is possible to do so; return number of values edited
     return 0;
   }
+
+  // FIXME: missing member functions to "apply" the control law: i.e. control = evaluate(state).
 
 private:
   std::vector<double> grid_th1;
@@ -120,11 +167,7 @@ void mexFunction(int nlhs,
     mexErrMsgTxt("P does not hold a complete and valid set of parameters");
   }
 
-  //plhs[0] = mxCreateDoubleMatrix(mxGetM(prhs[arg_index_state]), mxGetN(prhs[arg_index_state]), mxREAL);
-  //double* ptrdz = (double *) mxGetPr(plhs[0]);
-  //acrobot::calculate_dotted_state(ptrdz, time, ptrz, &P);
-
-  acrobotDP acbdp(32, 31, 30, 29);
+  acrobotDP acbdp(36, 34, 33, 35);
 
   mexPrintf("num. cells = %i\n", acbdp.size());
   mexPrintf("dims = %i,%i,%i,%i\n", acbdp.dim(0), acbdp.dim(1), acbdp.dim(2), acbdp.dim(3));
