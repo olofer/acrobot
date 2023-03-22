@@ -109,15 +109,75 @@ public:
   }
 
   // FIXME: member function that evaluates all control options across all neighbor target lattice points from a given source lattice point
+  void calc_action_values(acrobot::params* P,
+                          const int* isource,
+                          double dt,
+                          const double* sigma,
+                          const std::vector<double>& uvec,
+                          std::vector<double>& psum,
+                          std::vector<double>& Vu) const 
+  {
+    for (size_t a = 0; a < uvec.size(); a++) {
+      Vu[a] = 0.0;
+      psum[a] = 0.0;
+    }
+    // const int ksource = sub2ind(isource);
+    const double xsource[4] = {grid_th1[isource[0]], grid_th2[isource[1]], grid_th1d[isource[2]], grid_th2d[isource[3]]};
+    for (int i0 = -1; i0 <= 1; i0++) {
+      for (int i1 = -1; i1 <= 1; i1++) {
+        for (int i2 = -1; i2 <= 1; i2++) {
+          for (int i3 = -1; i3 <= 1; i3++) {
+            int itarget[4] = {isource[0] + i0, isource[1] + i1, isource[2] + i2, isource[3] + i3};
+            if (itarget[2] == -1 || itarget[2] == dims[2]) continue;
+            if (itarget[3] == -1 || itarget[3] == dims[3]) continue;
+            if (itarget[0] == -1) itarget[0] += dims[0];
+            if (itarget[0] == dims[0]) itarget[0] -= dims[0];
+            if (itarget[1] == -1) itarget[1] += dims[1];
+            if (itarget[1] == dims[1]) itarget[1] -= dims[1];
+
+            const int ktarget = sub2ind(itarget);
+            const double Vtarget = value[ktarget];
+            const double xtarget[4] = {grid_th1[itarget[0]], grid_th2[itarget[1]], grid_th1d[itarget[2]], grid_th2d[itarget[3]]};
+
+            for (size_t a = 0; a < uvec.size(); a++) {
+              P->u = uvec[a];
+              const double errsq_a = errsq(P, xsource, xtarget, dt, sigma);
+              if (errsq_a >= 16.0) continue;
+              const double pa = std::exp(-0.5 * errsq_a);
+              Vu[a] += pa * Vtarget;
+              psum[a] += pa;
+            }
+
+          }
+        }
+      }  
+    }
+
+    for (size_t a = 0; a < uvec.size(); a++) {
+      Vu[a] /= psum[a];
+    }
+  }
 
   int initilize() {
-    // set terminal cost ; the value is just the number of time-steps to-go until done
-    // the action array A can signal whether there has been any value assigned at a cell
+    std::memset(value.data(), 0, sizeof(float) * value.size());
+    // FIXME: assign value one to target cell close to: {pi/2,pi/2,0,0}
     return 0;
   }
 
-  int update() {
-    // run a single scan across the cells; update values where it is possible to do so; return number of values edited
+  int update(acrobot::params* P, 
+             double dt)
+  {
+    int isource[4];
+    const double sigma[4] = {0.05, 0.05, 0.05, 0.05};
+    const double du = 1.0;
+    std::vector<double> uvec = {-du, 0.0, du};
+    std::vector<double> valk(uvec.size());
+    std::vector<double> psum(uvec.size());
+
+    for (int k = 0; k < size(); k++) {
+      ind2sub(k, isource);
+      calc_action_values(P, isource, dt, sigma, uvec, psum, valk);
+    }
     return 0;
   }
 
@@ -177,6 +237,7 @@ void mexFunction(int nlhs,
   }
   
   acbdp.initilize();
+  acbdp.update(&P, 1.0e-3);
 
   const mwSize dims[4] = {acbdp.getN1(), acbdp.getN2(), acbdp.getN1D(), acbdp.getN2D()};
   plhs[0] = mxCreateNumericArray(4, dims, mxDOUBLE_CLASS, mxREAL);
