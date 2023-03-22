@@ -8,7 +8,7 @@ Run it directly online <https://raw.githack.com/olofer/acrobot/main/payload/inde
 - `Z` reset to (arbitrary) "zero" (potential energy) state
 - `U` reset to upright position (maximum pot. energy)
 - `D` reset to hanging position (minimum pot. energy)
-- `up/down` apply torque at common joint in either direection
+- `up/down` apply torque at common joint in either direction
 - `left/right` increase/decrease friction at common joint
 
 More options: TBD
