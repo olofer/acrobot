@@ -3,10 +3,6 @@
  *
  */
 
-// TODO: need the develop the neccessary equation/stencil for the evolution rule to be used
-//       parameters include "dt" and "sigma" and the dynamics "dotted state" function
-// TODO: also figure out correct treatment of periodic state variables and absorbing state variables
-
 #include "mex.h"
 #include <cstring>
 #include <cmath>
@@ -47,21 +43,28 @@ public:
     for (int i = 0; i < ndot2; i++) {
       grid_th2d[i] = -maxdot2 + (2.0 * maxdot2 * i) / (ndot2 - 1);
     }
+    deltas[0] = 2.0 * _one_pi / nth1;
+    deltas[1] = 2.0 * _one_pi / nth2;
+    deltas[2] = 2.0 * maxdot1 / (ndot1 - 1);
+    deltas[3] = 2.0 * maxdot2 / (ndot2 - 1);
   }
 
   ~acrobotDP() {}
 
-  int getN1() const { return grid_th1.size(); }
-  int getN2() const { return grid_th2.size(); }
-  int getN1D() const { return grid_th1d.size(); }
-  int getN2D() const { return grid_th2d.size(); }
-  int size() const { return value.size(); }
   int dim(int i) const { return dims[i]; }
-  int sub2ind(const int* i) const { return sub2ind(i[0], i[1], i[2], i[3]); }
+
+  double delta(int i) const { return deltas[i]; }
+
+  int size() const { return value.size(); }
+
   int sub2ind(int i0, int i1, int i2, int i3) const {
-    //return i0 + dims[0] * i1 + dims[0] * dims[1] * i2 + dims[0] * dims[1] * dims[2] * i3;
     return i0 + dims[0] * (i1 + dims[1] * (i2 + dims[2] * i3));
   }
+
+  int sub2ind(const int* i) const {
+    return sub2ind(i[0], i[1], i[2], i[3]); 
+  }
+
   void ind2sub(int idx, int* i) const {
     i[0] = idx % dims[0];
     idx = (idx - i[0]) / dims[0];
@@ -71,6 +74,7 @@ public:
     idx = (idx - i[2]) / dims[2];
     i[3] = idx; 
   }
+
   bool check_ind2sub2ind() const {
     int indices[4];
     for (int k = 0; k < size(); k++) {
@@ -81,103 +85,126 @@ public:
     return true;
   }
 
-  double errsq(const acrobot::params* P, // given P->u provided control value
-               const double* xsource, 
-               const double* xtarget, 
-               double dt,
-               const double* sigma) const
-  {
-    // Use trapezoidal transcription equation to assess the "fitness" of the source and target states w.r.t. dynamics
-    double deltx[4] = {xtarget[0] - xsource[0], xtarget[1] - xsource[1], xtarget[2] - xsource[2], xtarget[3] - xsource[3]};
-    if (deltx[0] < -_one_pi) deltx[0] += 2.0 * _one_pi;
-    if (deltx[0] > _one_pi)  deltx[0] -= 2.0 * _one_pi;
-    if (deltx[1] < -_one_pi) deltx[1] += 2.0 * _one_pi;
-    if (deltx[1] > _one_pi)  deltx[1] -= 2.0 * _one_pi;
-
-    const double dummytime = 0.0;
-    double dotx0[4] = {0.0, 0.0, 0.0, 0.0};
-    acrobot::calculate_dotted_state(dotx0, dummytime, xsource, P);
-    double dotx1[4] = {0.0, 0.0, 0.0, 0.0};
-    acrobot::calculate_dotted_state(dotx1, dummytime, xtarget, P);
-
-    double errsq = 0.0;
-    for (int i = 0; i < 4; i++) {
-      const double wi = deltx[i] - 0.5 * dt * (dotx0[i] + dotx1[i]);
-      errsq += wi * wi / (sigma[i] * sigma[i] * dt);
-    }
-    return errsq;
+  double lookup(int i0, int i1, int i2, int i3) const {
+    if (i2 < 0 || i2 >= dims[2]) return 0.0;
+    if (i3 < 0 || i3 >= dims[3]) return 0.0;
+    if (i0 < 0) i0 += dims[0];
+    if (i0 >= dims[0]) i0 -= dims[0];
+    if (i1 < 0) i1 += dims[1];
+    if (i1 >= dims[1]) i1 -= dims[1];
+    return value[sub2ind(i0, i1, i2, i3)];
   }
 
-  // FIXME: member function that evaluates all control options across all neighbor target lattice points from a given source lattice point
-  void calc_action_values(acrobot::params* P,
-                          const int* isource,
-                          double dt,
-                          const double* sigma,
-                          const std::vector<double>& uvec,
-                          std::vector<double>& psum,
-                          std::vector<double>& Vu) const 
-  {
-    for (size_t a = 0; a < uvec.size(); a++) {
-      Vu[a] = 0.0;
-      psum[a] = 0.0;
-    }
-    // const int ksource = sub2ind(isource);
-    const double xsource[4] = {grid_th1[isource[0]], grid_th2[isource[1]], grid_th1d[isource[2]], grid_th2d[isource[3]]};
-    for (int i0 = -1; i0 <= 1; i0++) {
-      for (int i1 = -1; i1 <= 1; i1++) {
-        for (int i2 = -1; i2 <= 1; i2++) {
-          for (int i3 = -1; i3 <= 1; i3++) {
-            int itarget[4] = {isource[0] + i0, isource[1] + i1, isource[2] + i2, isource[3] + i3};
-            if (itarget[2] == -1 || itarget[2] == dims[2]) continue;
-            if (itarget[3] == -1 || itarget[3] == dims[3]) continue;
-            if (itarget[0] == -1) itarget[0] += dims[0];
-            if (itarget[0] == dims[0]) itarget[0] -= dims[0];
-            if (itarget[1] == -1) itarget[1] += dims[1];
-            if (itarget[1] == dims[1]) itarget[1] -= dims[1];
+  void interp4d_weights(const double* eta, double* w) const {
+    const double w0 = (1.0 - eta[0]);
+    const double w1 = (eta[0]);
 
-            const int ktarget = sub2ind(itarget);
-            const double Vtarget = value[ktarget];
-            const double xtarget[4] = {grid_th1[itarget[0]], grid_th2[itarget[1]], grid_th1d[itarget[2]], grid_th2d[itarget[3]]};
+    const double w00 = w0 * (1.0 - eta[1]);
+    const double w01 = w0 * (eta[1]);
+    const double w10 = w1 * (1.0 - eta[1]);
+    const double w11 = w1 * (eta[1]);
 
-            for (size_t a = 0; a < uvec.size(); a++) {
-              P->u = uvec[a];
-              const double errsq_a = errsq(P, xsource, xtarget, dt, sigma);
-              if (errsq_a >= 16.0) continue;
-              const double pa = std::exp(-0.5 * errsq_a);
-              Vu[a] += pa * Vtarget;
-              psum[a] += pa;
-            }
+    const double w000 = w00 * (1.0 - eta[2]);
+    const double w001 = w00 * (eta[2]);
+    const double w010 = w01 * (1.0 - eta[2]);
+    const double w011 = w01 * (eta[2]);
+    const double w100 = w10 * (1.0 - eta[2]);
+    const double w101 = w10 * (eta[2]);
+    const double w110 = w11 * (1.0 - eta[2]);
+    const double w111 = w11 * (eta[2]);
 
-          }
-        }
-      }  
-    }
+    w[0]  = w000 * (1.0 - eta[3]);  // w{0,0,0,0}
+    w[1]  = w000 * (eta[3]);        // w{0,0,0,1}
+    w[2]  = w001 * (1.0 - eta[3]);  // ...
+    w[3]  = w001 * (eta[3]);
+    w[4]  = w010 * (1.0 - eta[3]);
+    w[5]  = w010 * (eta[3]);
+    w[6]  = w011 * (1.0 - eta[3]);
+    w[7]  = w011 * (eta[3]);
 
-    for (size_t a = 0; a < uvec.size(); a++) {
-      Vu[a] /= psum[a];
-    }
+    w[8]  = w100 * (1.0 - eta[3]);
+    w[9]  = w100 * (eta[3]);
+    w[10] = w101 * (1.0 - eta[3]);
+    w[11] = w101 * (eta[3]);
+    w[12] = w110 * (1.0 - eta[3]);
+    w[13] = w110 * (eta[3]);        // ...
+    w[14] = w111 * (1.0 - eta[3]);  // w{1,1,1,0}
+    w[15] = w111 * (eta[3]);        // w{1,1,1,1}
   }
 
-  int initilize() {
+  double interp4d(int i0, double eta0, // assume 0 <= eta < 1
+                  int i1, double eta1,
+                  int i2, double eta2,
+                  int i3, double eta3) const {
+    
+    const double eta[4] = {eta0, eta1, eta2, eta3};
+
+    double weights[16];
+    interp4d_weights(eta, weights);
+
+    double values[16] = {
+      lookup(i0, i1, i2, i3),
+      lookup(i0, i1, i2, i3 + 1),
+      lookup(i0, i1, i2 + 1, i3),
+      lookup(i0, i1, i2 + 1, i3 + 1),
+
+      lookup(i0, i1 + 1, i2, i3),
+      lookup(i0, i1 + 1, i2, i3 + 1),
+      lookup(i0, i1 + 1, i2 + 1, i3),
+      lookup(i0, i1 + 1, i2 + 1, i3 + 1),
+
+      lookup(i0 + 1, i1, i2, i3),
+      lookup(i0 + 1, i1, i2, i3 + 1),
+      lookup(i0 + 1, i1, i2 + 1, i3),
+      lookup(i0 + 1, i1, i2 + 1, i3 + 1),
+
+      lookup(i0 + 1, i1 + 1, i2, i3),
+      lookup(i0 + 1, i1 + 1, i2, i3 + 1),
+      lookup(i0 + 1, i1 + 1, i2 + 1, i3),
+      lookup(i0 + 1, i1 + 1, i2 + 1, i3 + 1)
+    };
+
+    double sum = 0.0;
+    for (int i = 0; i < 16; i++) {
+      sum += weights[i] * values[i];
+    }
+
+    return sum;
+  }
+
+  double interp4d(const double* x) const {
+    // TODO: use "deltas" and floor operation here
+    // convert x[0..3] into i0..i3, eta0..eta3, and call interp4d(..)
+    return interp4d(0, 0.0, 0, 0.0, 0, 0.0, 0, 0.0);
+  }
+
+  // FIXME: backward induction based on table interpolation
+
+  int initialize() {
     std::memset(value.data(), 0, sizeof(float) * value.size());
     // FIXME: assign value one to target cell close to: {pi/2,pi/2,0,0}
+    value[sub2ind(10, 11, 12, 13)] = 1.0;
     return 0;
   }
 
   int update(acrobot::params* P, 
              double dt)
   {
-    int isource[4];
-    const double sigma[4] = {0.05, 0.05, 0.05, 0.05};
-    const double du = 1.0;
-    std::vector<double> uvec = {-du, 0.0, du};
-    std::vector<double> valk(uvec.size());
-    std::vector<double> psum(uvec.size());
+    double sum = 0.0;
+    int ik[4];
 
     for (int k = 0; k < size(); k++) {
-      ind2sub(k, isource);
-      calc_action_values(P, isource, dt, sigma, uvec, psum, valk);
+      ind2sub(k, ik);
+      const double Vk = interp4d(ik[0], 0.125, 
+                                 ik[1], 0.25,
+                                 ik[2], 0.50,
+                                 ik[3], 0.75);
+      sum += Vk;
+      if (Vk != 0.0) {
+        mexPrintf("Vk = %e @ k = %i\n", Vk, k);
+      }
     }
+    mexPrintf("[%s]: sum = %e\n", __func__, sum);
     return 0;
   }
 
@@ -190,6 +217,7 @@ private:
   std::vector<double> grid_th2d;
 
   int dims[4];
+  double deltas[4];
 
   std::vector<float> value;
   std::vector<int8_t> action;
@@ -230,16 +258,17 @@ void mexFunction(int nlhs,
   acrobotDP acbdp(36, 34, 33, 35);
 
   mexPrintf("num. cells = %i\n", acbdp.size());
-  mexPrintf("dims = %i,%i,%i,%i\n", acbdp.dim(0), acbdp.dim(1), acbdp.dim(2), acbdp.dim(3));
+  mexPrintf("dims       = %i, %i, %i, %i\n", acbdp.dim(0), acbdp.dim(1), acbdp.dim(2), acbdp.dim(3));
+  mexPrintf("deltas     = %f, %f, %f, %f\n", acbdp.delta(0), acbdp.delta(1), acbdp.delta(2), acbdp.delta(3));
 
   if (!acbdp.check_ind2sub2ind()) {
     mexErrMsgTxt("Self-check of ind2sub, sub2ind failed");
   }
   
-  acbdp.initilize();
+  acbdp.initialize();
   acbdp.update(&P, 1.0e-3);
 
-  const mwSize dims[4] = {acbdp.getN1(), acbdp.getN2(), acbdp.getN1D(), acbdp.getN2D()};
+  const mwSize dims[4] = {acbdp.dim(0), acbdp.dim(1), acbdp.dim(2), acbdp.dim(3)};
   plhs[0] = mxCreateNumericArray(4, dims, mxDOUBLE_CLASS, mxREAL);
   plhs[1] = mxCreateNumericArray(4, dims, mxDOUBLE_CLASS, mxREAL);
 
