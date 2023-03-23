@@ -11,6 +11,7 @@
 #include "acrobot_mex_utils.hpp"
 
 #include <vector>
+#include <limits>
 
 const double _one_pi = 3.14159265358979323846;
 
@@ -173,12 +174,74 @@ public:
   }
 
   double interp4d(const double* x) const {
-    // TODO: use "deltas" and floor operation here
-    // convert x[0..3] into i0..i3, eta0..eta3, and call interp4d(..)
-    return interp4d(0, 0.0, 0, 0.0, 0, 0.0, 0, 0.0);
+    const double y0 = (x[0] - grid_th1[0]) / deltas[0];
+    const double i0 = std::floor(y0);
+
+    const double y1 = (x[1] - grid_th2[0]) / deltas[1];
+    const double i1 = std::floor(y1);
+
+    const double y2 = (x[2] - grid_th1d[0]) / deltas[2];
+    const double i2 = std::floor(y2);
+
+    const double y3 = (x[3] - grid_th2d[0]) / deltas[3];
+    const double i3 = std::floor(y3);
+
+    return interp4d((int) i0, y0 - i0, 
+                    (int) i1, y1 - i1,
+                    (int) i2, y2 - i2,
+                    (int) i3, y3 - i3);
   }
 
-  // FIXME: backward induction based on table interpolation
+  // FIXME: "add(x, weight)" function; add weight to value cells centered at location x (~ reverse of interp4d)
+
+  void euler_update(const acrobot::params* P,
+                    const std::vector<double>& ulevels,
+                    double dt) const 
+  {
+    acrobot::params localP(*P);
+    int ik[4];
+    double xdot[4];
+
+    if (localP.L2 != P->L2 || localP.I1 != P->I1) return;
+
+    const int numlevels = ulevels.size();
+    double totalsum = 0.0;
+
+    for (int k = 0; k < size(); k++) {
+      ind2sub(k, ik);
+      const double xk[4] = {grid_th1[ik[0]], 
+                            grid_th2[ik[1]], 
+                            grid_th1d[ik[2]], 
+                            grid_th2d[ik[3]]};
+
+      double max_value = std::numeric_limits<double>::lowest();
+      int argmax = -1;
+
+      for (int a = 0; a < numlevels; a++) {
+        localP.u = ulevels[a];
+        acrobot::calculate_dotted_state(xdot, 0.0, xk, &localP);
+
+        const double xnext[4] = {xk[0] + dt * xdot[0], 
+                                 xk[1] + dt * xdot[1], 
+                                 xk[2] + dt * xdot[2], 
+                                 xk[3] + dt * xdot[3]};
+
+        const double vnext_a = interp4d(xnext);
+
+        if (vnext_a > max_value) {
+          max_value = vnext_a;
+          argmax = a;
+        } // TODO: on equality; select a if ulevels[a] < current selection (if any, i.e. argmax != -1)
+
+        totalsum += vnext_a;
+      }
+
+      // Here we need to select the best value and assign to action[.]
+      // store argmax or ulevels[argmax] as action
+    }
+
+    mexPrintf("[%s]: sum(all next values) = %e (%i actions)\n", __func__, totalsum, numlevels);
+  }
 
   int initialize() {
     std::memset(value.data(), 0, sizeof(float) * value.size());
@@ -187,8 +250,8 @@ public:
     return 0;
   }
 
-  int update(acrobot::params* P, 
-             double dt)
+  int update(const acrobot::params* P, 
+             double dt) 
   {
     double sum = 0.0;
     int ik[4];
@@ -267,6 +330,9 @@ void mexFunction(int nlhs,
   
   acbdp.initialize();
   acbdp.update(&P, 1.0e-3);
+
+  std::vector<double> ulevels = {-1.0, 0.0, +1.0};
+  acbdp.euler_update(&P, ulevels, 1.0e-3);
 
   const mwSize dims[4] = {acbdp.dim(0), acbdp.dim(1), acbdp.dim(2), acbdp.dim(3)};
   plhs[0] = mxCreateNumericArray(4, dims, mxDOUBLE_CLASS, mxREAL);
