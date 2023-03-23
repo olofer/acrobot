@@ -3,6 +3,12 @@
  *
  */
 
+// FIXME: scatter() function, npts as argument, dt as argument, return grid vectors
+// (and update test script; including visualization; and apply feedback law)
+// implement Heuns integration method as alternative; (better integrator may pay off a lot actually !)
+// larger time-steps..faster useful solution
+// ..
+
 #include "mex.h"
 #include <cstring>
 #include <cmath>
@@ -29,8 +35,10 @@ public:
   grid_th1d(ndot1), 
   grid_th2d(ndot2),
   value(nth1 * nth2 * ndot1 * ndot2), 
+  value_update(value),
   action(nth1 * nth2 * ndot1 * ndot2), 
-  dims{nth1, nth2, ndot1, ndot2}
+  dims{nth1, nth2, ndot1, ndot2},
+  time(0.0)
   {
     for (int i = 0; i < nth1; i++) {
       grid_th1[i] = (2.0 * _one_pi * i) / nth1; 
@@ -193,19 +201,26 @@ public:
   }
 
   // FIXME: "add(x, weight)" function; add weight to value cells centered at location x (~ reverse of interp4d)
+  void scatter(const double* x, double mass) {
+    return;
+  }
+
+  double update_time() const { return time; }
 
   void euler_update(const acrobot::params* P,
                     const std::vector<double>& ulevels,
-                    double dt) const 
+                    double dt) 
   {
     acrobot::params localP(*P);
     int ik[4];
     double xdot[4];
+    int actionChanges = 0;
 
     if (localP.L2 != P->L2 || localP.I1 != P->I1) return;
 
     const int numlevels = ulevels.size();
     double totalsum = 0.0;
+    double updatesum = 0.0;
 
     for (int k = 0; k < size(); k++) {
       ind2sub(k, ik);
@@ -231,22 +246,41 @@ public:
         if (vnext_a > max_value) {
           max_value = vnext_a;
           argmax = a;
-        } // TODO: on equality; select a if ulevels[a] < current selection (if any, i.e. argmax != -1)
+        } else if (vnext_a == max_value && ulevels[a] == 0.0) {
+          argmax = a;
+        }
 
         totalsum += vnext_a;
       }
+
+      value_update[k] = max_value;
+      if (action[k] != (int8_t) argmax) {
+        action[k] = (int8_t) argmax;
+        actionChanges++;
+      }
+
+      updatesum += max_value;
 
       // Here we need to select the best value and assign to action[.]
       // store argmax or ulevels[argmax] as action
     }
 
-    mexPrintf("[%s]: sum(all next values) = %e (%i actions)\n", __func__, totalsum, numlevels);
+    std::memcpy(value.data(), value_update.data(), sizeof(float) * value.size());
+    time += dt;
+
+    mexPrintf("[%s]: totalsum=%e (across %i actions); sum(update)=%e (changes=%i); bkwdtm=%f\n", __func__, totalsum, numlevels, updatesum, actionChanges, time);
   }
 
   int initialize() {
+    time = 0.0;
     std::memset(value.data(), 0, sizeof(float) * value.size());
+    std::memset(value_update.data(), 0, sizeof(float) * value_update.size());
+    std::memset(action.data(), 0, sizeof(int8_t) * action.size());
+
     // FIXME: assign value one to target cell close to: {pi/2,pi/2,0,0}
-    value[sub2ind(10, 11, 12, 13)] = 1.0;
+    // This is where I should call the scatter function !
+
+    value[sub2ind(8, 8, 16, 16)] = 1.0;
     return 0;
   }
 
@@ -273,6 +307,10 @@ public:
 
   // FIXME: missing member functions to "apply" the control law: i.e. control = evaluate(state).
 
+  float valueAt(int k) const { return value[k]; }
+
+  int8_t actionAt(int k) const { return action[k]; }
+
 private:
   std::vector<double> grid_th1;
   std::vector<double> grid_th2;
@@ -283,7 +321,9 @@ private:
   double deltas[4];
 
   std::vector<float> value;
+  std::vector<float> value_update;
   std::vector<int8_t> action;
+  double time;
 };
 
 void mexFunction(int nlhs, 
@@ -304,8 +344,8 @@ void mexFunction(int nlhs,
 
   const int itrs = (int) std::round(getDoubleScalar(prhs[arg_index_iterations]));
 
-  if (itrs <= 0) {
-    mexErrMsgTxt("itrs >= 1 required");
+  if (itrs < 0) {
+    mexErrMsgTxt("itrs >= 0 required");
   }
 
   if (!mxIsStruct(prhs[arg_index_params])) {
@@ -327,13 +367,18 @@ void mexFunction(int nlhs,
   if (!acbdp.check_ind2sub2ind()) {
     mexErrMsgTxt("Self-check of ind2sub, sub2ind failed");
   }
+
+  const double dt = 1.0e-3;
   
   acbdp.initialize();
-  acbdp.update(&P, 1.0e-3);
+  acbdp.update(&P, dt);
 
-  std::vector<double> ulevels = {-1.0, 0.0, +1.0};
-  acbdp.euler_update(&P, ulevels, 1.0e-3);
+  std::vector<double> ulevels = {-1.0, -0.5, 0.0, 0.5, +1.0};
+  for (int i = 0; i < itrs; i++) {
+    acbdp.euler_update(&P, ulevels, dt);
+  }
 
+  // Output 4D arrays have same memory layout as Octave so just linear copy
   const mwSize dims[4] = {acbdp.dim(0), acbdp.dim(1), acbdp.dim(2), acbdp.dim(3)};
   plhs[0] = mxCreateNumericArray(4, dims, mxDOUBLE_CLASS, mxREAL);
   plhs[1] = mxCreateNumericArray(4, dims, mxDOUBLE_CLASS, mxREAL);
@@ -342,11 +387,16 @@ void mexFunction(int nlhs,
   double* A = (double*) mxGetPr(plhs[1]);
 
   for (int k = 0; k < acbdp.size(); k++) {
+    V[k] = acbdp.valueAt(k);
+    A[k] = ulevels[acbdp.actionAt(k)];
+  }
+
+  /*for (int k = 0; k < acbdp.size(); k++) {
     int indices[4];
     acbdp.ind2sub(k, indices);
     V[acbdp.sub2ind(indices[0], indices[1], indices[2], indices[3])] = (double) k;
     A[acbdp.sub2ind(indices[0], indices[1], indices[2], indices[3])] = (double) (acbdp.size() - k - 1);
-  }
+  }*/
 
   return;
 }

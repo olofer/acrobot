@@ -21,7 +21,7 @@ P.muA = 0.0;
 P.muB = 0.0;
 
 disp('calling DP solver..');
-[V, A] = acrobot_dpsolve(P, 50);
+[V, A] = acrobot_dpsolve(P, 500);
 
 disp(size(V));
 disp(size(A));
