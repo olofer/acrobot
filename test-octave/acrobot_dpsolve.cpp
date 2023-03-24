@@ -3,7 +3,7 @@
  *
  */
 
-// FIXME: scatter() function, npts as argument, dt as argument, return grid vectors
+// FIXME: npts as argument, dt as argument, return grid vectors
 // (and update test script; including visualization; and apply feedback law)
 // implement Heuns integration method as alternative; (better integrator may pay off a lot actually !)
 // larger time-steps..faster useful solution
@@ -94,14 +94,26 @@ public:
     return true;
   }
 
-  double lookup(int i0, int i1, int i2, int i3) const {
+  int lookupindex(int i0, int i1, int i2, int i3) const {
     if (i2 < 0 || i2 >= dims[2]) return 0.0;
     if (i3 < 0 || i3 >= dims[3]) return 0.0;
     if (i0 < 0) i0 += dims[0];
     if (i0 >= dims[0]) i0 -= dims[0];
     if (i1 < 0) i1 += dims[1];
     if (i1 >= dims[1]) i1 -= dims[1];
-    return value[sub2ind(i0, i1, i2, i3)];
+    return sub2ind(i0, i1, i2, i3);
+  }
+
+  double lookup(int i0, int i1, int i2, int i3) const {
+    return value[lookupindex(i0, i1, i2, i3)];
+  }
+
+  void assign(int i0, int i1, int i2, int i3, double q) {
+    value[lookupindex(i0, i1, i2, i3)] = q;
+  }
+
+  void impose(int i0, int i1, int i2, int i3, double q) {
+    value[lookupindex(i0, i1, i2, i3)] += q;
   }
 
   void interp4d_weights(const double* eta, double* w) const {
@@ -200,9 +212,58 @@ public:
                     (int) i3, y3 - i3);
   }
 
-  // FIXME: "add(x, weight)" function; add weight to value cells centered at location x (~ reverse of interp4d)
-  void scatter(const double* x, double mass) {
-    return;
+  void scatter(int i0, double eta0, // assume 0 <= eta < 1
+               int i1, double eta1,
+               int i2, double eta2,
+               int i3, double eta3,
+               double val)
+  {
+    const double eta[4] = {eta0, eta1, eta2, eta3};
+
+    double weights[16];
+    interp4d_weights(eta, weights);
+
+    impose(i0, i1, i2, i3, val * weights[0]);
+    impose(i0, i1, i2, i3 + 1, val * weights[1]);
+    impose(i0, i1, i2 + 1, i3, val * weights[2]);
+    impose(i0, i1, i2 + 1, i3 + 1, val * weights[3]);
+
+    impose(i0, i1 + 1, i2, i3, val * weights[4]);
+    impose(i0, i1 + 1, i2, i3 + 1, val * weights[5]);
+    impose(i0, i1 + 1, i2 + 1, i3, val * weights[6]);
+    impose(i0, i1 + 1, i2 + 1, i3 + 1, val * weights[7]);
+
+    impose(i0 + 1, i1, i2, i3, val * weights[8]);
+    impose(i0 + 1, i1, i2, i3 + 1, val * weights[9]);
+    impose(i0 + 1, i1, i2 + 1, i3, val * weights[10]);
+    impose(i0 + 1, i1, i2 + 1, i3 + 1, val * weights[11]);
+
+    impose(i0 + 1, i1 + 1, i2, i3, val * weights[12]);
+    impose(i0 + 1, i1 + 1, i2, i3 + 1, val * weights[13]);
+    impose(i0 + 1, i1 + 1, i2 + 1, i3, val * weights[14]);
+    impose(i0 + 1, i1 + 1, i2 + 1, i3 + 1, val * weights[15]);
+  }
+
+  void scatter(const double* x, 
+               double mass)
+  {
+    const double y0 = (x[0] - grid_th1[0]) / deltas[0];
+    const double i0 = std::floor(y0);
+
+    const double y1 = (x[1] - grid_th2[0]) / deltas[1];
+    const double i1 = std::floor(y1);
+
+    const double y2 = (x[2] - grid_th1d[0]) / deltas[2];
+    const double i2 = std::floor(y2);
+
+    const double y3 = (x[3] - grid_th2d[0]) / deltas[3];
+    const double i3 = std::floor(y3);
+
+    scatter((int) i0, y0 - i0, 
+            (int) i1, y1 - i1,
+            (int) i2, y2 - i2,
+            (int) i3, y3 - i3,
+            mass);
   }
 
   double update_time() const { return time; }
@@ -215,8 +276,6 @@ public:
     int ik[4];
     double xdot[4];
     int actionChanges = 0;
-
-    if (localP.L2 != P->L2 || localP.I1 != P->I1) return;
 
     const int numlevels = ulevels.size();
     double totalsum = 0.0;
@@ -277,10 +336,9 @@ public:
     std::memset(value_update.data(), 0, sizeof(float) * value_update.size());
     std::memset(action.data(), 0, sizeof(int8_t) * action.size());
 
-    // FIXME: assign value one to target cell close to: {pi/2,pi/2,0,0}
-    // This is where I should call the scatter function !
+    const double xupright[4] = {_one_pi / 2.0, _one_pi / 2.0, 0.0, 0.0};
+    scatter(xupright, 1.0);
 
-    value[sub2ind(8, 8, 16, 16)] = 1.0;
     return 0;
   }
 
