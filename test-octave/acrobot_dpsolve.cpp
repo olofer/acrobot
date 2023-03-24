@@ -1,12 +1,13 @@
 /*
- * USAGE: [V, A] = acrobot_dpsolve(P, itrs);
+ * USAGE: [V, A] = acrobot_dpsolve(P, npts, itrs, dt);
  *
  */
 
-// FIXME: npts as argument, dt as argument, return grid vectors
+// FIXME: return grid vectors
 // (and update test script; including visualization; and apply feedback law)
-// implement Heuns integration method as alternative; (better integrator may pay off a lot actually !)
-// larger time-steps..faster useful solution
+// FIXME: implement Heuns integration method as alternative; 
+// FIXME: must be able to specify the min/max solver bounds for the ang. velocities
+// FIXME: determine the operational max(abs(thetadot)) from the JS/WASM simulation
 // ..
 
 #include "mex.h"
@@ -23,6 +24,20 @@ const double _one_pi = 3.14159265358979323846;
 
 class acrobotDP
 {
+private:
+  std::vector<double> grid_th1;
+  std::vector<double> grid_th2;
+  std::vector<double> grid_th1d;
+  std::vector<double> grid_th2d;
+
+  int dims[4];
+  double deltas[4];
+
+  std::vector<float> value;
+  std::vector<float> value_update;
+  std::vector<int8_t> action;
+  double time;
+
 public:
   acrobotDP(int nth1, 
             int nth2, 
@@ -368,20 +383,6 @@ public:
   float valueAt(int k) const { return value[k]; }
 
   int8_t actionAt(int k) const { return action[k]; }
-
-private:
-  std::vector<double> grid_th1;
-  std::vector<double> grid_th2;
-  std::vector<double> grid_th1d;
-  std::vector<double> grid_th2d;
-
-  int dims[4];
-  double deltas[4];
-
-  std::vector<float> value;
-  std::vector<float> value_update;
-  std::vector<int8_t> action;
-  double time;
 };
 
 void mexFunction(int nlhs, 
@@ -390,20 +391,48 @@ void mexFunction(int nlhs,
                  const mxArray** prhs)
 {
   const int arg_index_params = 0;
-  const int arg_index_iterations = 1;
+  const int arg_index_gridpoints = 1;
+  const int arg_index_iterations = 2;
+  const int arg_index_deltatime = 3;
 
-  if (nrhs != 2 || nlhs != 2) {
-    mexErrMsgTxt("USAGE: [V, A] = acrobot_dpsolve(P, itrs);");
+  if (nrhs != 4 || nlhs != 2) {
+    mexErrMsgTxt("USAGE: [V, A] = acrobot_dpsolve(P, npts, itrs, dt);");
+  }
+
+  if (!(isDoubleRealVector(prhs[arg_index_gridpoints]) && 
+        mxGetNumberOfElements(prhs[arg_index_gridpoints]) == 4)) {
+    mexErrMsgTxt("npts should be a 4d vector");
   }
 
   if (!isDoubleRealScalar(prhs[arg_index_iterations])) {
     mexErrMsgTxt("Expects itrs to be real scalar");
   }
 
+  if (!isDoubleRealScalar(prhs[arg_index_deltatime])) {
+    mexErrMsgTxt("Expects dt to be real scalar");
+  }
+
   const int itrs = (int) std::round(getDoubleScalar(prhs[arg_index_iterations]));
 
   if (itrs < 0) {
     mexErrMsgTxt("itrs >= 0 required");
+  }
+
+  const double dt = getDoubleScalar(prhs[arg_index_deltatime]);
+  if (dt <= 0.0) {
+    mexErrMsgTxt("dt > 0 required");
+  }
+
+  const double* pdims = mxGetPr(prhs[arg_index_gridpoints]);
+  const int npts[4] = {(int) std::floor(pdims[0]),
+                       (int) std::floor(pdims[1]),
+                       (int) std::floor(pdims[2]),
+                       (int) std::floor(pdims[3])};
+
+  for (int i = 0; i < 4; i++) {
+    if (npts[i] < 3) {
+      mexErrMsgTxt("At least 3 points per dimension is expected");
+    }
   }
 
   if (!mxIsStruct(prhs[arg_index_params])) {
@@ -416,7 +445,8 @@ void mexFunction(int nlhs,
     mexErrMsgTxt("P does not hold a complete and valid set of parameters");
   }
 
-  acrobotDP acbdp(36, 34, 33, 35);
+  //acrobotDP acbdp(36, 34, 33, 35);
+  acrobotDP acbdp(npts[0], npts[1], npts[2], npts[3]);
 
   mexPrintf("num. cells = %i\n", acbdp.size());
   mexPrintf("dims       = %i, %i, %i, %i\n", acbdp.dim(0), acbdp.dim(1), acbdp.dim(2), acbdp.dim(3));
@@ -425,8 +455,6 @@ void mexFunction(int nlhs,
   if (!acbdp.check_ind2sub2ind()) {
     mexErrMsgTxt("Self-check of ind2sub, sub2ind failed");
   }
-
-  const double dt = 1.0e-3;
   
   acbdp.initialize();
   acbdp.update(&P, dt);
