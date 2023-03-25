@@ -4,7 +4,13 @@
  */
 
 // FIXME: faster & still OK to use (int) instad of std::floor(.) ?
-// FIXME: return grid vectors
+// FIXME: return grid vectors --- then explore what happens if I apply the feedback rule
+//        in simulation... using nearest control action through lookup in A 4D array..
+//
+// It may be more convenient to run that simulation from the C++ code itself (here);
+// FIXME: the actual value function should be "minimum time" + terminal reward at upright, add -dt to each phase ?
+// FIXME: a self-test for the scatter code and the interp code; scatter a value; then get it back via interp!
+// 
 
 #include "mex.h"
 #include <cstring>
@@ -291,7 +297,6 @@ public:
     int actionChanges = 0;
 
     const int numlevels = ulevels.size();
-    double totalsum = 0.0;
     double updatesum = 0.0;
 
     for (int k = 0; k < size(); k++) {
@@ -311,7 +316,7 @@ public:
         } else {
           acrobot::step_heun(xnext, xk, dt, &localP);
         }
-        const T vnext_a = interp4d(xnext);
+        const T vnext_a = interp4d(xnext); // -dt + value(next) ?
 
         if (vnext_a > max_value) {
           max_value = vnext_a;
@@ -319,8 +324,6 @@ public:
         } else if (vnext_a == max_value && ulevels[a] == 0.0) {
           argmax = a;
         }
-
-        totalsum += vnext_a;
       }
 
       value_update[k] = max_value;
@@ -338,7 +341,7 @@ public:
     std::memcpy(value.data(), value_update.data(), sizeof(T) * value.size());
     time += dt;
 
-    mexPrintf("[%s]: totalsum=%e (across %i actions); sum(update)=%e (changes=%i); bkwdtm=%f\n", __func__, totalsum, numlevels, updatesum, actionChanges, time);
+    mexPrintf("[%s]: sum(update)=%e (levels=%i, changes=%i); bkwdtm=%f\n", __func__, updatesum, numlevels, actionChanges, time);
   }
 
   int initialize() {
@@ -443,22 +446,23 @@ void mexFunction(int nlhs,
     mexErrMsgTxt("P does not hold a complete and valid set of parameters");
   }
 
-  //acrobotDP acbdp(36, 34, 33, 35);
-  acrobotDP<double> acbdp(npts[0], npts[1], npts[2], npts[3]);
+  //acrobotDP<double> acbdp(npts[0], npts[1], npts[2], npts[3]);
+  acrobotDP<float> acbdp(npts[0], npts[1], npts[2], npts[3]);
 
   mexPrintf("num. cells = %i\n", acbdp.size());
   mexPrintf("dims       = %i, %i, %i, %i\n", acbdp.dim(0), acbdp.dim(1), acbdp.dim(2), acbdp.dim(3));
   mexPrintf("deltas     = %f, %f, %f, %f\n", acbdp.delta(0), acbdp.delta(1), acbdp.delta(2), acbdp.delta(3));
-  mexPrintf("sizef(T)   = %i (sizeof value element type)\n", acbdp.sizeofValueType());
+  mexPrintf("sizeof(T)  = %i (sizeof value element type)\n", acbdp.sizeofValueType());
 
   if (!acbdp.check_ind2sub2ind()) {
     mexErrMsgTxt("Self-check of ind2sub, sub2ind failed");
   }
   
   acbdp.initialize();
-  acbdp.dummy_update(&P, dt);
+  //acbdp.dummy_update(&P, dt);
 
-  std::vector<double> ulevels = {-1.0, -0.5, 0.0, 0.5, +1.0};
+  //std::vector<double> ulevels = {-1.0, -0.5, 0.0, 0.5, +1.0};
+  std::vector<double> ulevels = {-1.0, 0.0, +1.0};
   for (int i = 0; i < itrs; i++) {
     acbdp.update(&P, ulevels, dt);
   }
