@@ -28,6 +28,8 @@ WebAssembly.instantiateStreaming(fetch('browser_sim.wasm'), importObject)
     var getEnergy = results.instance.exports.getEnergy;
 
     const jointWithFriction = 1;
+    var logExtremes = false;
+    var maxThetaDot12 = [0.0, 0.0];
     
     function keyDownEvent(e)
     {
@@ -57,6 +59,10 @@ WebAssembly.instantiateStreaming(fetch('browser_sim.wasm'), importObject)
                               2.0 * Math.PI * Math.random(), 
                               0.0, 
                               0.0);
+        }
+
+        if (key == 'l' || key == 'L') {
+            logExtremes = !logExtremes;
         }
     
         if (code == 39) // right
@@ -180,7 +186,7 @@ WebAssembly.instantiateStreaming(fetch('browser_sim.wasm'), importObject)
         const E = getEnergy();
         ctx.fillText('energy: ' + E.toFixed(3) + ' [J]', 10.0, 80.0);
     }
-    
+
     //var fps = 60;
     var startTime = Date.now();
     //var frameDuration = 1000 / fps;
@@ -210,6 +216,19 @@ WebAssembly.instantiateStreaming(fetch('browser_sim.wasm'), importObject)
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             draw(canvas, ctx);
             //ctx.restore();
+        }
+
+        if (logExtremes) {
+            var absThetaDot1 = Math.abs(getThetaDot(0));
+            var absThetaDot2 = Math.abs(getThetaDot(1));
+            if (absThetaDot1 > maxThetaDot12[0]) {
+                maxThetaDot12[0] = absThetaDot1;
+                console.log(maxThetaDot12);
+            }
+            if (absThetaDot2 > maxThetaDot12[1]) {
+                maxThetaDot12[1] = absThetaDot2;
+                console.log(maxThetaDot12);
+            }
         }
     }
     
