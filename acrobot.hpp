@@ -209,4 +209,39 @@ double total_mechanical_energy(const double* z,
   return (Krot + Klin + Vgra);
 }
 
+void step_euler(double* znext,
+                const double* znow,
+                double dt, 
+                const params* parms)
+{
+  double zdot[4];
+  calculate_dotted_state(zdot, 0.0, znow, parms);
+  znext[0] = znow[0] + dt * zdot[0]; 
+  znext[1] = znow[1] + dt * zdot[1]; 
+  znext[2] = znow[2] + dt * zdot[2]; 
+  znext[3] = znow[3] + dt * zdot[3]; 
+}
+
+void step_heun(double* znext,
+               const double* znow,
+               double dt, 
+               const params* parms)
+{
+  double zdot[4];
+  double zpred[4];
+  double zpred_dot[4];
+
+  calculate_dotted_state(zdot, 0.0, znow, parms);
+  zpred[0] = znow[0] + dt * zdot[0]; 
+  zpred[1] = znow[1] + dt * zdot[1]; 
+  zpred[2] = znow[2] + dt * zdot[2]; 
+  zpred[3] = znow[3] + dt * zdot[3]; 
+
+  calculate_dotted_state(zpred_dot, 0.0, zpred, parms);
+  znext[0] = znow[0] + dt * (zdot[0] + zpred_dot[0]) / 2.0;
+  znext[1] = znow[1] + dt * (zdot[1] + zpred_dot[1]) / 2.0;
+  znext[2] = znow[2] + dt * (zdot[2] + zpred_dot[2]) / 2.0;
+  znext[3] = znow[3] + dt * (zdot[3] + zpred_dot[3]) / 2.0;
+}
+
 } // end namespace acrobot

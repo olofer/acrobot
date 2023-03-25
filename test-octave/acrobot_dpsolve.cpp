@@ -3,12 +3,8 @@
  *
  */
 
+// FIXME: faster & still OK to use (int) instad of std::floor(.) ?
 // FIXME: return grid vectors
-// (and update test script; including visualization; and apply feedback law)
-// FIXME: implement Heuns integration method as alternative; 
-// FIXME: must be able to specify the min/max solver bounds for the ang. velocities
-// FIXME: determine the operational max(abs(thetadot)) from the JS/WASM simulation
-// ..
 
 #include "mex.h"
 #include <cstring>
@@ -22,6 +18,7 @@
 
 const double _one_pi = 3.14159265358979323846;
 
+template <typename T>
 class acrobotDP
 {
 private:
@@ -33,8 +30,8 @@ private:
   int dims[4];
   double deltas[4];
 
-  std::vector<float> value;
-  std::vector<float> value_update;
+  std::vector<T> value;
+  std::vector<T> value_update;
   std::vector<int8_t> action;
   double time;
 
@@ -43,8 +40,8 @@ public:
             int nth2, 
             int ndot1, 
             int ndot2,
-            double maxdot1 = 1.0,
-            double maxdot2 = 1.0) : 
+            double maxdot1 = 4.0 * _one_pi,
+            double maxdot2 = 4.0 * _one_pi) : 
   grid_th1(nth1), 
   grid_th2(nth2), 
   grid_th1d(ndot1), 
@@ -119,15 +116,15 @@ public:
     return sub2ind(i0, i1, i2, i3);
   }
 
-  double lookup(int i0, int i1, int i2, int i3) const {
+  T lookup(int i0, int i1, int i2, int i3) const {
     return value[lookupindex(i0, i1, i2, i3)];
   }
 
-  void assign(int i0, int i1, int i2, int i3, double q) {
+  void assign(int i0, int i1, int i2, int i3, T q) {
     value[lookupindex(i0, i1, i2, i3)] = q;
   }
 
-  void impose(int i0, int i1, int i2, int i3, double q) {
+  void impose(int i0, int i1, int i2, int i3, T q) {
     value[lookupindex(i0, i1, i2, i3)] += q;
   }
 
@@ -231,7 +228,7 @@ public:
                int i1, double eta1,
                int i2, double eta2,
                int i3, double eta3,
-               double val)
+               T val)
   {
     const double eta[4] = {eta0, eta1, eta2, eta3};
 
@@ -260,7 +257,7 @@ public:
   }
 
   void scatter(const double* x, 
-               double mass)
+               T mass)
   {
     const double y0 = (x[0] - grid_th1[0]) / deltas[0];
     const double i0 = std::floor(y0);
@@ -283,13 +280,14 @@ public:
 
   double update_time() const { return time; }
 
-  void euler_update(const acrobot::params* P,
-                    const std::vector<double>& ulevels,
-                    double dt) 
+  void update(const acrobot::params* P,
+              const std::vector<double>& ulevels,
+              double dt,
+              bool use_euler = false) 
   {
     acrobot::params localP(*P);
     int ik[4];
-    double xdot[4];
+    double xnext[4];
     int actionChanges = 0;
 
     const int numlevels = ulevels.size();
@@ -303,19 +301,17 @@ public:
                             grid_th1d[ik[2]], 
                             grid_th2d[ik[3]]};
 
-      double max_value = std::numeric_limits<double>::lowest();
+      T max_value = std::numeric_limits<T>::lowest();
       int argmax = -1;
 
       for (int a = 0; a < numlevels; a++) {
         localP.u = ulevels[a];
-        acrobot::calculate_dotted_state(xdot, 0.0, xk, &localP);
-
-        const double xnext[4] = {xk[0] + dt * xdot[0], 
-                                 xk[1] + dt * xdot[1], 
-                                 xk[2] + dt * xdot[2], 
-                                 xk[3] + dt * xdot[3]};
-
-        const double vnext_a = interp4d(xnext);
+        if (use_euler) {
+          acrobot::step_euler(xnext, xk, dt, &localP);
+        } else {
+          acrobot::step_heun(xnext, xk, dt, &localP);
+        }
+        const T vnext_a = interp4d(xnext);
 
         if (vnext_a > max_value) {
           max_value = vnext_a;
@@ -339,7 +335,7 @@ public:
       // store argmax or ulevels[argmax] as action
     }
 
-    std::memcpy(value.data(), value_update.data(), sizeof(float) * value.size());
+    std::memcpy(value.data(), value_update.data(), sizeof(T) * value.size());
     time += dt;
 
     mexPrintf("[%s]: totalsum=%e (across %i actions); sum(update)=%e (changes=%i); bkwdtm=%f\n", __func__, totalsum, numlevels, updatesum, actionChanges, time);
@@ -347,8 +343,8 @@ public:
 
   int initialize() {
     time = 0.0;
-    std::memset(value.data(), 0, sizeof(float) * value.size());
-    std::memset(value_update.data(), 0, sizeof(float) * value_update.size());
+    std::memset(value.data(), 0, sizeof(T) * value.size());
+    std::memset(value_update.data(), 0, sizeof(T) * value_update.size());
     std::memset(action.data(), 0, sizeof(int8_t) * action.size());
 
     const double xupright[4] = {_one_pi / 2.0, _one_pi / 2.0, 0.0, 0.0};
@@ -357,8 +353,8 @@ public:
     return 0;
   }
 
-  int update(const acrobot::params* P, 
-             double dt) 
+  int dummy_update(const acrobot::params* P, 
+             double dt)  const
   {
     double sum = 0.0;
     int ik[4];
@@ -380,7 +376,9 @@ public:
 
   // FIXME: missing member functions to "apply" the control law: i.e. control = evaluate(state).
 
-  float valueAt(int k) const { return value[k]; }
+  int sizeofValueType() const { return sizeof(T); }
+
+  T valueAt(int k) const { return value[k]; }
 
   int8_t actionAt(int k) const { return action[k]; }
 };
@@ -446,22 +444,23 @@ void mexFunction(int nlhs,
   }
 
   //acrobotDP acbdp(36, 34, 33, 35);
-  acrobotDP acbdp(npts[0], npts[1], npts[2], npts[3]);
+  acrobotDP<double> acbdp(npts[0], npts[1], npts[2], npts[3]);
 
   mexPrintf("num. cells = %i\n", acbdp.size());
   mexPrintf("dims       = %i, %i, %i, %i\n", acbdp.dim(0), acbdp.dim(1), acbdp.dim(2), acbdp.dim(3));
   mexPrintf("deltas     = %f, %f, %f, %f\n", acbdp.delta(0), acbdp.delta(1), acbdp.delta(2), acbdp.delta(3));
+  mexPrintf("sizef(T)   = %i (sizeof value element type)\n", acbdp.sizeofValueType());
 
   if (!acbdp.check_ind2sub2ind()) {
     mexErrMsgTxt("Self-check of ind2sub, sub2ind failed");
   }
   
   acbdp.initialize();
-  acbdp.update(&P, dt);
+  acbdp.dummy_update(&P, dt);
 
   std::vector<double> ulevels = {-1.0, -0.5, 0.0, 0.5, +1.0};
   for (int i = 0; i < itrs; i++) {
-    acbdp.euler_update(&P, ulevels, dt);
+    acbdp.update(&P, ulevels, dt);
   }
 
   // Output 4D arrays have same memory layout as Octave so just linear copy
