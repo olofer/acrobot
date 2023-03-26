@@ -3,13 +3,13 @@
  *
  */
 
+// FIXME: a self-test for the scatter code and the interp code (not sure it is fully correct at this time)
 // FIXME: faster & still OK to use (int) instad of std::floor(.) ?
 // FIXME: return grid vectors --- then explore what happens if I apply the feedback rule
 //        in simulation... using nearest control action through lookup in A 4D array..
 //
 // It may be more convenient to run that simulation from the C++ code itself (here);
 // FIXME: the actual value function should be "minimum time" + terminal reward at upright, add -dt to each phase ?
-// FIXME: a self-test for the scatter code and the interp code; scatter a value; then get it back via interp!
 // 
 
 #include "mex.h"
@@ -345,10 +345,7 @@ public:
   }
 
   int initialize() {
-    time = 0.0;
-    std::memset(value.data(), 0, sizeof(T) * value.size());
-    std::memset(value_update.data(), 0, sizeof(T) * value_update.size());
-    std::memset(action.data(), 0, sizeof(int8_t) * action.size());
+    clear();
 
     const double xupright[4] = {_one_pi / 2.0, _one_pi / 2.0, 0.0, 0.0};
     scatter(xupright, 1.0);
@@ -356,6 +353,7 @@ public:
     return 0;
   }
 
+  /*
   int dummy_update(const acrobot::params* P, 
              double dt)  const
   {
@@ -375,6 +373,34 @@ public:
     }
     mexPrintf("[%s]: sum = %e\n", __func__, sum);
     return 0;
+  }
+  */
+
+  void clear() {
+    time = 0.0;
+    std::memset(value.data(), 0, sizeof(T) * value.size());
+    std::memset(value_update.data(), 0, sizeof(T) * value_update.size());
+    std::memset(action.data(), 0, sizeof(int8_t) * action.size());
+  }
+
+  // TODO: think harder about what this code actually need to do; then make sure it tests correctly..
+  void test_scatter_interp(double putval) {
+
+    const double X0[4] = {_one_pi / 2.0, _one_pi / 2.0, 0.0, 0.0};
+    const double X1[4] = {-_one_pi / 2.0, -_one_pi / 2.0, 0.0, 0.0};
+    const double X2[4] = {0.0, 0.0, 0.0, 0.0};
+    const double X3[4] = {0.0, 0.0, 1.0, -1.0};
+    const double X4[4] = {1.11, 2.22, 3.33, 4.44};
+
+    const double* X[5] = {X0, X1, X2, X3, X4};
+
+    for (int j = 0; j < 5; j++) {
+      clear();
+      scatter(X[j], putval);
+      const double getval = interp4d(X[j]);
+      mexPrintf("[%s]: put value = %f (scatter %i)\n", __func__, putval, j);
+      mexPrintf("[%s]: get value = %f (interp  %i)\n", __func__, getval, j);
+    }
   }
 
   // FIXME: missing member functions to "apply" the control law: i.e. control = evaluate(state).
@@ -396,7 +422,7 @@ void mexFunction(int nlhs,
   const int arg_index_iterations = 2;
   const int arg_index_deltatime = 3;
 
-  if (nrhs != 4 || nlhs != 2) {
+  if (nrhs != 4 || nlhs > 2) {
     mexErrMsgTxt("USAGE: [V, A] = acrobot_dpsolve(P, npts, itrs, dt);");
   }
 
@@ -456,6 +482,12 @@ void mexFunction(int nlhs,
 
   if (!acbdp.check_ind2sub2ind()) {
     mexErrMsgTxt("Self-check of ind2sub, sub2ind failed");
+  }
+
+  if (nrhs != 2) {
+    mexPrintf("[%s]: (not 2 output arguments) running self-check\n", __func__);
+    acbdp.test_scatter_interp(2.56);
+    return;
   }
   
   acbdp.initialize();
