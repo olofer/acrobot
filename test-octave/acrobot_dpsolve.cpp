@@ -3,12 +3,7 @@
  *
  */
 
-// FIXME: return grid vectors --- then explore what happens if I apply the feedback rule
-//        in simulation... using nearest control action through lookup in A 4D array..
-//
-// It may be more convenient to run that simulation from the C++ code itself (here);
-// FIXME: the actual value function should be "minimum time" + terminal reward at upright, add -dt to each phase ?
-// 
+// This branch of the solver uses "snap-to-grid" (no interpolation)
 
 #include "mex.h"
 #include <cstring>
@@ -19,8 +14,6 @@
 
 #include <vector>
 #include <limits>
-
-//#include <omp.h>
 
 const double _one_pi = 3.14159265358979323846;
 
@@ -135,181 +128,37 @@ public:
   }
 
   void griddify(const double* x,
-                int *i,
-                double* eta) const
+                int *i) const
   {
     const double y0 = (x[0] - grid_th1[0]) / deltas[0];
-    i[0] = (int) std::floor(y0);
-    eta[0] = y0 - i[0];
+    i[0] = (int) std::round(y0);
 
     const double y1 = (x[1] - grid_th2[0]) / deltas[1];
-    i[1] = (int) std::floor(y1);
-    eta[1] = y1 - i[1];
+    i[1] = (int) std::round(y1);
 
     const double y2 = (x[2] - grid_th1d[0]) / deltas[2];
-    i[2] = (int) std::floor(y2);
-    eta[2] = y2 - i[2];
+    i[2] = (int) std::round(y2);
 
     const double y3 = (x[3] - grid_th2d[0]) / deltas[3];
-    i[3] = (int) std::floor(y3);
-    eta[3] = y3 - i[3];
+    i[3] = (int) std::round(y3);
   }
 
-  /*
-  void griddify_faster(const double* x,
-                       int *i,
-                       double* eta) const
-  {
-    const int bias = 100;
-
-    const double y0 = (x[0] - grid_th1[0]) / deltas[0];
-    i[0] = ((int) (y0 + bias)) - bias;
-    eta[0] = y0 - i[0];
-
-    const double y1 = (x[1] - grid_th2[0]) / deltas[1];
-    i[1] = ((int) (y1 + bias)) - bias;
-    eta[1] = y1 - i[1];
-
-    const double y2 = (x[2] - grid_th1d[0]) / deltas[2];
-    i[2] = ((int) (y2 + bias)) - bias;
-    eta[2] = y2 - i[2];
-
-    const double y3 = (x[3] - grid_th2d[0]) / deltas[3];
-    i[3] = ((int) (y3 + bias)) - bias;
-    eta[3] = y3 - i[3];
-  }
-  */
-
-  void interp4d_weights(const double* eta, double* w) const {
-    const double w0 = (1.0 - eta[0]);
-    const double w1 = (eta[0]);
-
-    const double w00 = w0 * (1.0 - eta[1]);
-    const double w01 = w0 * (eta[1]);
-    const double w10 = w1 * (1.0 - eta[1]);
-    const double w11 = w1 * (eta[1]);
-
-    const double w000 = w00 * (1.0 - eta[2]);
-    const double w001 = w00 * (eta[2]);
-    const double w010 = w01 * (1.0 - eta[2]);
-    const double w011 = w01 * (eta[2]);
-    const double w100 = w10 * (1.0 - eta[2]);
-    const double w101 = w10 * (eta[2]);
-    const double w110 = w11 * (1.0 - eta[2]);
-    const double w111 = w11 * (eta[2]);
-
-    w[0]  = w000 * (1.0 - eta[3]);  // w{0,0,0,0}
-    w[1]  = w000 * (eta[3]);        // w{0,0,0,1}
-    w[2]  = w001 * (1.0 - eta[3]);  // ...
-    w[3]  = w001 * (eta[3]);
-    w[4]  = w010 * (1.0 - eta[3]);
-    w[5]  = w010 * (eta[3]);
-    w[6]  = w011 * (1.0 - eta[3]);
-    w[7]  = w011 * (eta[3]);
-
-    w[8]  = w100 * (1.0 - eta[3]);
-    w[9]  = w100 * (eta[3]);
-    w[10] = w101 * (1.0 - eta[3]);
-    w[11] = w101 * (eta[3]);
-    w[12] = w110 * (1.0 - eta[3]);
-    w[13] = w110 * (eta[3]);        // ...
-    w[14] = w111 * (1.0 - eta[3]);  // w{1,1,1,0}
-    w[15] = w111 * (eta[3]);        // w{1,1,1,1}
-  }
-
-  double interp4d(int i0, double eta0, // assume 0 <= eta < 1
-                  int i1, double eta1,
-                  int i2, double eta2,
-                  int i3, double eta3) const {
-    
-    const double eta[4] = {eta0, eta1, eta2, eta3};
-
-    double weights[16];
-    interp4d_weights(eta, weights);
-
-    double values[16] = {
-      lookup(i0, i1, i2, i3),
-      lookup(i0, i1, i2, i3 + 1),
-      lookup(i0, i1, i2 + 1, i3),
-      lookup(i0, i1, i2 + 1, i3 + 1),
-
-      lookup(i0, i1 + 1, i2, i3),
-      lookup(i0, i1 + 1, i2, i3 + 1),
-      lookup(i0, i1 + 1, i2 + 1, i3),
-      lookup(i0, i1 + 1, i2 + 1, i3 + 1),
-
-      lookup(i0 + 1, i1, i2, i3),
-      lookup(i0 + 1, i1, i2, i3 + 1),
-      lookup(i0 + 1, i1, i2 + 1, i3),
-      lookup(i0 + 1, i1, i2 + 1, i3 + 1),
-
-      lookup(i0 + 1, i1 + 1, i2, i3),
-      lookup(i0 + 1, i1 + 1, i2, i3 + 1),
-      lookup(i0 + 1, i1 + 1, i2 + 1, i3),
-      lookup(i0 + 1, i1 + 1, i2 + 1, i3 + 1)
-    };
-
-    double sum = 0.0;
-    for (int i = 0; i < 16; i++) {
-      sum += weights[i] * values[i];
-    }
-
-    return sum;
+  T interp4d(int i0, int i1, int i2, int i3) const {
+    return lookup(i0, i1, i2, i3);
   }
 
   double interp4d(const double* x) const {
     int i[4];
-    double eta[4];
-    griddify(x, i, eta);
-    return interp4d(i[0], eta[0], 
-                    i[1], eta[1],
-                    i[2], eta[2],
-                    i[3], eta[3]);
-  }
-
-  void scatter(int i0, double eta0, // assume 0 <= eta < 1
-               int i1, double eta1,
-               int i2, double eta2,
-               int i3, double eta3,
-               T val)
-  {
-    const double eta[4] = {eta0, eta1, eta2, eta3};
-
-    double weights[16];
-    interp4d_weights(eta, weights);
-
-    impose(i0, i1, i2, i3, val * weights[0]);
-    impose(i0, i1, i2, i3 + 1, val * weights[1]);
-    impose(i0, i1, i2 + 1, i3, val * weights[2]);
-    impose(i0, i1, i2 + 1, i3 + 1, val * weights[3]);
-
-    impose(i0, i1 + 1, i2, i3, val * weights[4]);
-    impose(i0, i1 + 1, i2, i3 + 1, val * weights[5]);
-    impose(i0, i1 + 1, i2 + 1, i3, val * weights[6]);
-    impose(i0, i1 + 1, i2 + 1, i3 + 1, val * weights[7]);
-
-    impose(i0 + 1, i1, i2, i3, val * weights[8]);
-    impose(i0 + 1, i1, i2, i3 + 1, val * weights[9]);
-    impose(i0 + 1, i1, i2 + 1, i3, val * weights[10]);
-    impose(i0 + 1, i1, i2 + 1, i3 + 1, val * weights[11]);
-
-    impose(i0 + 1, i1 + 1, i2, i3, val * weights[12]);
-    impose(i0 + 1, i1 + 1, i2, i3 + 1, val * weights[13]);
-    impose(i0 + 1, i1 + 1, i2 + 1, i3, val * weights[14]);
-    impose(i0 + 1, i1 + 1, i2 + 1, i3 + 1, val * weights[15]);
+    griddify(x, i);
+    return interp4d(i[0], i[1], i[2], i[3]);
   }
 
   void scatter(const double* x, 
                T mass)
   { 
     int i[4];
-    double eta[4];
-    griddify(x, i, eta);
-    scatter(i[0], eta[0], 
-            i[1], eta[1],
-            i[2], eta[2],
-            i[3], eta[3],
-            mass);
+    griddify(x, i);
+    impose(i[0], i[1], i[2], i[3], mass);
   }
 
   double update_time() const { return time; }
@@ -327,7 +176,6 @@ public:
     const int numlevels = ulevels.size();
     double updatesum = 0.0;
 
-    //#pragma omp parallel for
     for (int k = 0; k < size(); k++) {
       ind2sub(k, ik);
       const double xk[4] = {grid_th1[ik[0]], 
@@ -345,6 +193,9 @@ public:
         } else {
           acrobot::step_heun(xnext, xk, dt, &localP);
         }
+
+        // Here determine the distance btw. xk and xnext in terms of manhattan-cell!
+
         const T vnext_a = interp4d(xnext); // -dt + value(next) ?
 
         if (vnext_a > max_value) {
@@ -407,9 +258,8 @@ public:
       scatter(X[j], putval);
       const double getval = interp4d(X[j]);
       const double sj = totalValueSum();
-      const double sjo = totalValueSumOffsetGrid(eta);
       mexPrintf("[%s]: put value = %f (%i)\n", __func__, putval, j);
-      mexPrintf("[%s]: total array sum = %f, offset sum = %f (%i)\n", __func__, sj, sjo, j);
+      mexPrintf("[%s]: total array sum = %f (%i)\n", __func__, sj, j);
       mexPrintf("[%s]: get value = %f (%i)\n", __func__, getval, j);
       mexPrintf("--- --- ---\n");
     }
@@ -425,20 +275,6 @@ public:
     double s = 0.0;
     for (int k = 0; k < size(); k++) {
       s += value[k];
-    }
-    return s;
-  }
-
-  double totalValueSumOffsetGrid(const double* eta) const {
-    int ik[4];
-    double s = 0.0;
-    for (int k = 0; k < size(); k++) {
-      ind2sub(k, ik);
-      const double Vk = interp4d(ik[0], eta[0], 
-                                 ik[1], eta[1],
-                                 ik[2], eta[2],
-                                 ik[3], eta[3]);
-      s += Vk;
     }
     return s;
   }
@@ -505,7 +341,6 @@ void mexFunction(int nlhs,
     mexErrMsgTxt("P does not hold a complete and valid set of parameters");
   }
 
-  //acrobotDP<double> acbdp(npts[0], npts[1], npts[2], npts[3]);
   acrobotDP<float> acbdp(npts[0], npts[1], npts[2], npts[3]);
 
   mexPrintf("num. cells = %i\n", acbdp.size());
@@ -525,8 +360,6 @@ void mexFunction(int nlhs,
   
   acbdp.initialize();
 
-  //omp_set_num_threads(2);
-
   //std::vector<double> ulevels = {-1.0, -0.5, 0.0, 0.5, +1.0};
   std::vector<double> ulevels = {-1.0, 0.0, +1.0};
   for (int i = 0; i < itrs; i++) {
@@ -545,13 +378,6 @@ void mexFunction(int nlhs,
     V[k] = acbdp.valueAt(k);
     A[k] = ulevels[acbdp.actionAt(k)];
   }
-
-  /*for (int k = 0; k < acbdp.size(); k++) {
-    int indices[4];
-    acbdp.ind2sub(k, indices);
-    V[acbdp.sub2ind(indices[0], indices[1], indices[2], indices[3])] = (double) k;
-    A[acbdp.sub2ind(indices[0], indices[1], indices[2], indices[3])] = (double) (acbdp.size() - k - 1);
-  }*/
 
   return;
 }
