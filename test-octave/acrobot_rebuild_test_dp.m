@@ -23,8 +23,8 @@ P.muB = 0.0;
 disp('calling DP solver..');
 %npts = [36, 34, 33, 35];
 %npts = [25, 25, 50, 50];
-npts = [48, 48, 64, 64];
-itrs = 500;
+npts = [54, 54, 65, 65];
+itrs = 750;
 deltat = 1.0e-2;
 
 %acrobot_dpsolve(P, npts, itrs, deltat);
@@ -33,3 +33,8 @@ deltat = 1.0e-2;
 %disp(size(V));
 %disp(size(A));
 %disp(prod(size(V)));
+
+% If we want to save the latest to disk..
+Vf = single(V);
+Af = single(A);
+save latest-dpsolve.mat npts itrs deltat P Vf Af;
