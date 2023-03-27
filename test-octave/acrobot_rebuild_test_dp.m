@@ -23,13 +23,13 @@ P.muB = 0.0;
 disp('calling DP solver..');
 %npts = [36, 34, 33, 35];
 %npts = [25, 25, 50, 50];
-npts = [32, 32, 64, 64];
-itrs = 150;
+npts = [48, 48, 64, 64];
+itrs = 500;
 deltat = 1.0e-2;
 
-acrobot_dpsolve(P, npts, itrs, deltat);
+%acrobot_dpsolve(P, npts, itrs, deltat);
 
-%[V, A] = acrobot_dpsolve(P, npts, itrs, deltat);
+[V, A] = acrobot_dpsolve(P, npts, itrs, deltat);
 %disp(size(V));
 %disp(size(A));
 %disp(prod(size(V)));

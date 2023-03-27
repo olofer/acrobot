@@ -3,8 +3,6 @@
  *
  */
 
-// FIXME: a self-test for the scatter code and the interp code (not sure it is fully correct at this time)
-// FIXME: faster & still OK to use (int) instad of std::floor(.) ?
 // FIXME: return grid vectors --- then explore what happens if I apply the feedback rule
 //        in simulation... using nearest control action through lookup in A 4D array..
 //
@@ -21,6 +19,8 @@
 
 #include <vector>
 #include <limits>
+
+//#include <omp.h>
 
 const double _one_pi = 3.14159265358979323846;
 
@@ -134,6 +134,52 @@ public:
     value[lookupindex(i0, i1, i2, i3)] += q;
   }
 
+  void griddify(const double* x,
+                int *i,
+                double* eta) const
+  {
+    const double y0 = (x[0] - grid_th1[0]) / deltas[0];
+    i[0] = (int) std::floor(y0);
+    eta[0] = y0 - i[0];
+
+    const double y1 = (x[1] - grid_th2[0]) / deltas[1];
+    i[1] = (int) std::floor(y1);
+    eta[1] = y1 - i[1];
+
+    const double y2 = (x[2] - grid_th1d[0]) / deltas[2];
+    i[2] = (int) std::floor(y2);
+    eta[2] = y2 - i[2];
+
+    const double y3 = (x[3] - grid_th2d[0]) / deltas[3];
+    i[3] = (int) std::floor(y3);
+    eta[3] = y3 - i[3];
+  }
+
+  /*
+  void griddify_faster(const double* x,
+                       int *i,
+                       double* eta) const
+  {
+    const int bias = 100;
+
+    const double y0 = (x[0] - grid_th1[0]) / deltas[0];
+    i[0] = ((int) (y0 + bias)) - bias;
+    eta[0] = y0 - i[0];
+
+    const double y1 = (x[1] - grid_th2[0]) / deltas[1];
+    i[1] = ((int) (y1 + bias)) - bias;
+    eta[1] = y1 - i[1];
+
+    const double y2 = (x[2] - grid_th1d[0]) / deltas[2];
+    i[2] = ((int) (y2 + bias)) - bias;
+    eta[2] = y2 - i[2];
+
+    const double y3 = (x[3] - grid_th2d[0]) / deltas[3];
+    i[3] = ((int) (y3 + bias)) - bias;
+    eta[3] = y3 - i[3];
+  }
+  */
+
   void interp4d_weights(const double* eta, double* w) const {
     const double w0 = (1.0 - eta[0]);
     const double w1 = (eta[0]);
@@ -212,22 +258,13 @@ public:
   }
 
   double interp4d(const double* x) const {
-    const double y0 = (x[0] - grid_th1[0]) / deltas[0];
-    const double i0 = std::floor(y0);
-
-    const double y1 = (x[1] - grid_th2[0]) / deltas[1];
-    const double i1 = std::floor(y1);
-
-    const double y2 = (x[2] - grid_th1d[0]) / deltas[2];
-    const double i2 = std::floor(y2);
-
-    const double y3 = (x[3] - grid_th2d[0]) / deltas[3];
-    const double i3 = std::floor(y3);
-
-    return interp4d((int) i0, y0 - i0, 
-                    (int) i1, y1 - i1,
-                    (int) i2, y2 - i2,
-                    (int) i3, y3 - i3);
+    int i[4];
+    double eta[4];
+    griddify(x, i, eta);
+    return interp4d(i[0], eta[0], 
+                    i[1], eta[1],
+                    i[2], eta[2],
+                    i[3], eta[3]);
   }
 
   void scatter(int i0, double eta0, // assume 0 <= eta < 1
@@ -264,29 +301,20 @@ public:
 
   void scatter(const double* x, 
                T mass)
-  {
-    const double y0 = (x[0] - grid_th1[0]) / deltas[0];
-    const double i0 = std::floor(y0);
-
-    const double y1 = (x[1] - grid_th2[0]) / deltas[1];
-    const double i1 = std::floor(y1);
-
-    const double y2 = (x[2] - grid_th1d[0]) / deltas[2];
-    const double i2 = std::floor(y2);
-
-    const double y3 = (x[3] - grid_th2d[0]) / deltas[3];
-    const double i3 = std::floor(y3);
-
-    scatter((int) i0, y0 - i0, 
-            (int) i1, y1 - i1,
-            (int) i2, y2 - i2,
-            (int) i3, y3 - i3,
+  { 
+    int i[4];
+    double eta[4];
+    griddify(x, i, eta);
+    scatter(i[0], eta[0], 
+            i[1], eta[1],
+            i[2], eta[2],
+            i[3], eta[3],
             mass);
   }
 
   double update_time() const { return time; }
 
-  void update(const acrobot::params* P,
+  bool update(const acrobot::params* P,
               const std::vector<double>& ulevels,
               double dt,
               bool use_euler = false) 
@@ -299,6 +327,7 @@ public:
     const int numlevels = ulevels.size();
     double updatesum = 0.0;
 
+    //#pragma omp parallel for
     for (int k = 0; k < size(); k++) {
       ind2sub(k, ik);
       const double xk[4] = {grid_th1[ik[0]], 
@@ -342,6 +371,7 @@ public:
     time += dt;
 
     mexPrintf("[%s]: sum(update)=%e (levels=%i, changes=%i); bkwdtm=%f\n", __func__, updatesum, numlevels, actionChanges, time);
+    return (actionChanges != 0);
   }
 
   int initialize() {
@@ -353,29 +383,6 @@ public:
     return 0;
   }
 
-  /*
-  int dummy_update(const acrobot::params* P, 
-             double dt)  const
-  {
-    double sum = 0.0;
-    int ik[4];
-
-    for (int k = 0; k < size(); k++) {
-      ind2sub(k, ik);
-      const double Vk = interp4d(ik[0], 0.125, 
-                                 ik[1], 0.25,
-                                 ik[2], 0.50,
-                                 ik[3], 0.75);
-      sum += Vk;
-      if (Vk != 0.0) {
-        mexPrintf("Vk = %e @ k = %i\n", Vk, k);
-      }
-    }
-    mexPrintf("[%s]: sum = %e\n", __func__, sum);
-    return 0;
-  }
-  */
-
   void clear() {
     time = 0.0;
     std::memset(value.data(), 0, sizeof(T) * value.size());
@@ -383,7 +390,6 @@ public:
     std::memset(action.data(), 0, sizeof(int8_t) * action.size());
   }
 
-  // TODO: think harder about what this code actually need to do; then make sure it tests correctly..
   void test_scatter_interp(double putval) {
 
     const double X0[4] = {_one_pi / 2.0, _one_pi / 2.0, 0.0, 0.0};
@@ -394,22 +400,49 @@ public:
 
     const double* X[5] = {X0, X1, X2, X3, X4};
 
+    const double eta[4] = {0.5, 0.12345, 0.2523, 0.96};
+
     for (int j = 0; j < 5; j++) {
       clear();
       scatter(X[j], putval);
       const double getval = interp4d(X[j]);
-      mexPrintf("[%s]: put value = %f (scatter %i)\n", __func__, putval, j);
-      mexPrintf("[%s]: get value = %f (interp  %i)\n", __func__, getval, j);
+      const double sj = totalValueSum();
+      const double sjo = totalValueSumOffsetGrid(eta);
+      mexPrintf("[%s]: put value = %f (%i)\n", __func__, putval, j);
+      mexPrintf("[%s]: total array sum = %f, offset sum = %f (%i)\n", __func__, sj, sjo, j);
+      mexPrintf("[%s]: get value = %f (%i)\n", __func__, getval, j);
+      mexPrintf("--- --- ---\n");
     }
   }
-
-  // FIXME: missing member functions to "apply" the control law: i.e. control = evaluate(state).
 
   int sizeofValueType() const { return sizeof(T); }
 
   T valueAt(int k) const { return value[k]; }
 
   int8_t actionAt(int k) const { return action[k]; }
+
+  double totalValueSum() const {
+    double s = 0.0;
+    for (int k = 0; k < size(); k++) {
+      s += value[k];
+    }
+    return s;
+  }
+
+  double totalValueSumOffsetGrid(const double* eta) const {
+    int ik[4];
+    double s = 0.0;
+    for (int k = 0; k < size(); k++) {
+      ind2sub(k, ik);
+      const double Vk = interp4d(ik[0], eta[0], 
+                                 ik[1], eta[1],
+                                 ik[2], eta[2],
+                                 ik[3], eta[3]);
+      s += Vk;
+    }
+    return s;
+  }
+
 };
 
 void mexFunction(int nlhs, 
@@ -484,19 +517,20 @@ void mexFunction(int nlhs,
     mexErrMsgTxt("Self-check of ind2sub, sub2ind failed");
   }
 
-  if (nrhs != 2) {
+  if (nlhs != 2) {
     mexPrintf("[%s]: (not 2 output arguments) running self-check\n", __func__);
     acbdp.test_scatter_interp(2.56);
     return;
   }
   
   acbdp.initialize();
-  //acbdp.dummy_update(&P, dt);
+
+  //omp_set_num_threads(2);
 
   //std::vector<double> ulevels = {-1.0, -0.5, 0.0, 0.5, +1.0};
   std::vector<double> ulevels = {-1.0, 0.0, +1.0};
   for (int i = 0; i < itrs; i++) {
-    acbdp.update(&P, ulevels, dt);
+    if (!acbdp.update(&P, ulevels, dt)) break;
   }
 
   // Output 4D arrays have same memory layout as Octave so just linear copy
