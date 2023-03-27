@@ -175,6 +175,7 @@ public:
 
     const int numlevels = ulevels.size();
     double updatesum = 0.0;
+    double distance_sum = 0.0;
 
     for (int k = 0; k < size(); k++) {
       ind2sub(k, ik);
@@ -195,6 +196,12 @@ public:
         }
 
         // Here determine the distance btw. xk and xnext in terms of manhattan-cell!
+        double manhattan_distance = std::fabs((xk[0] - xnext[0]) / deltas[0]) +
+                                    std::fabs((xk[1] - xnext[1]) / deltas[1]) +
+                                    std::fabs((xk[2] - xnext[2]) / deltas[2]) +
+                                    std::fabs((xk[3] - xnext[3]) / deltas[3]);
+        
+        distance_sum += manhattan_distance;
 
         const T vnext_a = interp4d(xnext); // -dt + value(next) ?
 
@@ -221,7 +228,11 @@ public:
     std::memcpy(value.data(), value_update.data(), sizeof(T) * value.size());
     time += dt;
 
-    mexPrintf("[%s]: sum(update)=%e (levels=%i, changes=%i); bkwdtm=%f\n", __func__, updatesum, numlevels, actionChanges, time);
+    const double avg_distance = distance_sum / (size() * numlevels);
+
+    mexPrintf("[%s]: sum(update)=%e (levels=%i, changes=%i); bkwdtm=%f (<d>=%f)\n", 
+              __func__, updatesum, numlevels, actionChanges, time, avg_distance);
+    
     return (actionChanges != 0);
   }
 

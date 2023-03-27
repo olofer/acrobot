@@ -25,16 +25,22 @@ disp('calling DP solver..');
 %npts = [25, 25, 50, 50];
 npts = [54, 54, 65, 65];
 itrs = 10; %750;
-deltat = 1.0e-2;
+deltat = 1e-3;
 
-%acrobot_dpsolve(P, npts, itrs, deltat);
+acrobot_dpsolve(P, npts, itrs, deltat);
+
+%return;
 
 [V, A] = acrobot_dpsolve(P, npts, itrs, deltat);
 %disp(size(V));
 %disp(size(A));
 %disp(prod(size(V)));
 
-% If we want to save the latest to disk..
+sum(V(:))
+sum(A(:))
+
+disp('dumping 4d tables to disk..');
 Vf = single(V);
 Af = single(A);
-save latest-dpsolve.mat npts itrs deltat P Vf Af;
+%save latest-dpsolve.mat npts itrs deltat P Vf Af;
+save('-mat7-binary', 'latest-dpsolve.mat', 'npts', 'itrs', 'deltat', 'Vf', 'Af');
