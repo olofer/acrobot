@@ -23,16 +23,13 @@ P.muB = 0.0;
 disp('calling DP solver..');
 %npts = [36, 34, 33, 35];
 %npts = [25, 25, 50, 50];
-npts = [54, 54, 65, 65];
-itrs = 750;
+npts = [55, 55, 65, 65];
+itrs = 800;
 deltat = 1.0e-2;
 
 %acrobot_dpsolve(P, npts, itrs, deltat);
 
-[V, A] = acrobot_dpsolve(P, npts, itrs, deltat);
-%disp(size(V));
-%disp(size(A));
-%disp(prod(size(V)));
+[V, A, g1, g2, g3, g4] = acrobot_dpsolve(P, npts, itrs, deltat);
 
 sum(V(:))
 sum(A(:))
@@ -41,4 +38,6 @@ disp('dumping 4d tables to disk..');
 Vf = single(V);
 Af = single(A);
 %save latest-dpsolve.mat npts itrs deltat P Vf Af;
-save('-mat7-binary', 'latest-dpsolve.mat', 'npts', 'itrs', 'deltat', 'Vf', 'Af');
+save('-mat7-binary', ...
+     'latest-dpsolve.mat', ...
+     'npts', 'itrs', 'deltat', 'Vf', 'Af', 'P', 'g1', 'g2', 'g3', 'g4');

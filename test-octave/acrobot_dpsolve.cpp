@@ -1,12 +1,9 @@
 /*
- * USAGE: [V, A] = acrobot_dpsolve(P, npts, itrs, dt);
+ * USAGE: USAGE: [V, A, g1, g2, g3, g4] = acrobot_dpsolve(P, npts, itrs, dt);
  *
  */
 
-// FIXME: return grid vectors --- then explore what happens if I apply the feedback rule
-//        in simulation... using nearest control action through lookup in A 4D array..
 //
-// It may be more convenient to run that simulation from the C++ code itself (here);
 // FIXME: the actual value function should be "minimum time" + terminal reward at upright, add -dt to each phase ?
 // 
 
@@ -445,6 +442,21 @@ public:
     return s;
   }
 
+  double gridPoint(int d, int i) const {
+    switch (d) {
+      case 0:
+        return grid_th1[i];
+      case 1:
+        return grid_th2[i];
+      case 2:
+        return grid_th1d[i];
+      case 3:
+        return grid_th2d[i];
+      default:
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+  }
+
 };
 
 void mexFunction(int nlhs, 
@@ -457,8 +469,8 @@ void mexFunction(int nlhs,
   const int arg_index_iterations = 2;
   const int arg_index_deltatime = 3;
 
-  if (nrhs != 4 || nlhs > 2) {
-    mexErrMsgTxt("USAGE: [V, A] = acrobot_dpsolve(P, npts, itrs, dt);");
+  if (nrhs != 4 || nlhs > 6) {
+    mexErrMsgTxt("USAGE: [V, A, g1, g2, g3, g4] = acrobot_dpsolve(P, npts, itrs, dt);");
   }
 
   if (!(isDoubleRealVector(prhs[arg_index_gridpoints]) && 
@@ -519,8 +531,8 @@ void mexFunction(int nlhs,
     mexErrMsgTxt("Self-check of ind2sub, sub2ind failed");
   }
 
-  if (nlhs != 2) {
-    mexPrintf("[%s]: (not 2 output arguments) running self-check\n", __func__);
+  if (nlhs != 6) {
+    mexPrintf("[%s]: (not 6 output arguments) running self-check\n", __func__);
     acbdp.test_scatter_interp(2.56);
     return;
   }
@@ -546,6 +558,14 @@ void mexFunction(int nlhs,
   for (int k = 0; k < acbdp.size(); k++) {
     V[k] = acbdp.valueAt(k);
     A[k] = ulevels[acbdp.actionAt(k)];
+  }
+
+  for (int i = 0; i < 4; i++) {
+    plhs[2 + i] = mxCreateDoubleMatrix(acbdp.dim(i), 1, mxREAL);
+    double* outi = (double *) mxGetPr(plhs[2 + i]);
+    for (int j = 0; j < acbdp.dim(i); j++) {
+      outi[j] = acbdp.gridPoint(i, j);
+    }
   }
 
   /*for (int k = 0; k < acbdp.size(); k++) {
