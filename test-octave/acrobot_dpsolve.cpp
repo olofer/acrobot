@@ -326,6 +326,7 @@ public:
 
     const int numlevels = ulevels.size();
     double updatesum = 0.0;
+    double sum_value_delta = 0.0;
 
     //#pragma omp parallel for
     for (int k = 0; k < size(); k++) {
@@ -356,21 +357,22 @@ public:
       }
 
       value_update[k] = max_value;
+      sum_value_delta += std::fabs(value_update[k] - value[k]);
+
       if (action[k] != (int8_t) argmax) {
         action[k] = (int8_t) argmax;
         actionChanges++;
       }
 
       updatesum += max_value;
-
-      // Here we need to select the best value and assign to action[.]
-      // store argmax or ulevels[argmax] as action
     }
 
     std::memcpy(value.data(), value_update.data(), sizeof(T) * value.size());
     time += dt;
 
-    mexPrintf("[%s]: sum(update)=%e (levels=%i, changes=%i); bkwdtm=%f\n", __func__, updatesum, numlevels, actionChanges, time);
+    mexPrintf("[%s]: sum(update,delta)=%e,%e (levels=%i,changes=%i); bkwdtm=%f\n", 
+              __func__, updatesum, sum_value_delta, numlevels, actionChanges, time);
+    
     return (actionChanges != 0);
   }
 

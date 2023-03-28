@@ -34,7 +34,11 @@ deltat = 1.0e-2;
 %disp(size(A));
 %disp(prod(size(V)));
 
-% If we want to save the latest to disk..
+sum(V(:))
+sum(A(:))
+
+disp('dumping 4d tables to disk..');
 Vf = single(V);
 Af = single(A);
-save latest-dpsolve.mat npts itrs deltat P Vf Af;
+%save latest-dpsolve.mat npts itrs deltat P Vf Af;
+save('-mat7-binary', 'latest-dpsolve.mat', 'npts', 'itrs', 'deltat', 'Vf', 'Af');
