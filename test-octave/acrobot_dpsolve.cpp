@@ -3,10 +3,6 @@
  *
  */
 
-//
-// FIXME: the actual value function should be "minimum time" + terminal reward at upright, add -dt to each phase ?
-// 
-
 #include "mex.h"
 #include <cstring>
 #include <cmath>
@@ -152,31 +148,6 @@ public:
     eta[3] = y3 - i[3];
   }
 
-  /*
-  void griddify_faster(const double* x,
-                       int *i,
-                       double* eta) const
-  {
-    const int bias = 100;
-
-    const double y0 = (x[0] - grid_th1[0]) / deltas[0];
-    i[0] = ((int) (y0 + bias)) - bias;
-    eta[0] = y0 - i[0];
-
-    const double y1 = (x[1] - grid_th2[0]) / deltas[1];
-    i[1] = ((int) (y1 + bias)) - bias;
-    eta[1] = y1 - i[1];
-
-    const double y2 = (x[2] - grid_th1d[0]) / deltas[2];
-    i[2] = ((int) (y2 + bias)) - bias;
-    eta[2] = y2 - i[2];
-
-    const double y3 = (x[3] - grid_th2d[0]) / deltas[3];
-    i[3] = ((int) (y3 + bias)) - bias;
-    eta[3] = y3 - i[3];
-  }
-  */
-
   void interp4d_weights(const double* eta, double* w) const {
     const double w0 = (1.0 - eta[0]);
     const double w1 = (eta[0]);
@@ -268,12 +239,36 @@ public:
                int i1, double eta1,
                int i2, double eta2,
                int i3, double eta3,
-               T val)
+               T val,
+               bool hardset = false)
   {
     const double eta[4] = {eta0, eta1, eta2, eta3};
 
     double weights[16];
     interp4d_weights(eta, weights);
+
+    if (hardset) {
+      assign(i0, i1, i2, i3, val * weights[0]);
+      assign(i0, i1, i2, i3 + 1, val * weights[1]);
+      assign(i0, i1, i2 + 1, i3, val * weights[2]);
+      assign(i0, i1, i2 + 1, i3 + 1, val * weights[3]);
+
+      assign(i0, i1 + 1, i2, i3, val * weights[4]);
+      assign(i0, i1 + 1, i2, i3 + 1, val * weights[5]);
+      assign(i0, i1 + 1, i2 + 1, i3, val * weights[6]);
+      assign(i0, i1 + 1, i2 + 1, i3 + 1, val * weights[7]);
+
+      assign(i0 + 1, i1, i2, i3, val * weights[8]);
+      assign(i0 + 1, i1, i2, i3 + 1, val * weights[9]);
+      assign(i0 + 1, i1, i2 + 1, i3, val * weights[10]);
+      assign(i0 + 1, i1, i2 + 1, i3 + 1, val * weights[11]);
+
+      assign(i0 + 1, i1 + 1, i2, i3, val * weights[12]);
+      assign(i0 + 1, i1 + 1, i2, i3 + 1, val * weights[13]);
+      assign(i0 + 1, i1 + 1, i2 + 1, i3, val * weights[14]);
+      assign(i0 + 1, i1 + 1, i2 + 1, i3 + 1, val * weights[15]);
+      return;
+    }
 
     impose(i0, i1, i2, i3, val * weights[0]);
     impose(i0, i1, i2, i3 + 1, val * weights[1]);
@@ -297,7 +292,8 @@ public:
   }
 
   void scatter(const double* x, 
-               T mass)
+               T mass,
+               bool hardset = false)
   { 
     int i[4];
     double eta[4];
@@ -306,15 +302,16 @@ public:
             i[1], eta[1],
             i[2], eta[2],
             i[3], eta[3],
-            mass);
+            mass,
+            hardset);
   }
 
   double update_time() const { return time; }
 
-  bool update(const acrobot::params* P,
-              const std::vector<double>& ulevels,
-              double dt,
-              bool use_euler = false) 
+  double update(const acrobot::params* P,
+                const std::vector<double>& ulevels,
+                double dt,
+                bool use_euler = false) 
   {
     acrobot::params localP(*P);
     int ik[4];
@@ -322,8 +319,6 @@ public:
     int actionChanges = 0;
 
     const int numlevels = ulevels.size();
-    double updatesum = 0.0;
-    double sum_value_delta = 0.0;
 
     //#pragma omp parallel for
     for (int k = 0; k < size(); k++) {
@@ -343,50 +338,52 @@ public:
         } else {
           acrobot::step_heun(xnext, xk, dt, &localP);
         }
-        const T vnext_a = interp4d(xnext); // -dt + value(next) ?
+        const T vnext_a = -dt + interp4d(xnext);
 
         if (vnext_a > max_value) {
           max_value = vnext_a;
-          argmax = a;
-        } else if (vnext_a == max_value && ulevels[a] == 0.0) {
           argmax = a;
         }
       }
 
       value_update[k] = max_value;
-      sum_value_delta += std::fabs(value_update[k] - value[k]);
+      action[k] = (int8_t) argmax;
 
-      if (action[k] != (int8_t) argmax) {
-        action[k] = (int8_t) argmax;
-        actionChanges++;
-      }
-
-      updatesum += max_value;
     }
 
-    std::memcpy(value.data(), value_update.data(), sizeof(T) * value.size());
+    double total_abs = 0.0;
+    double total_abs_diff = 0.0;
+    for (int k = 0; k < size(); k++) {
+      total_abs += std::fabs(value[k]);
+      if (value_update[k] <= value[k]) continue;
+      total_abs_diff += std::fabs(value_update[k] - value[k]);
+      value[k] = value_update[k];
+    }
+
     time += dt;
 
-    mexPrintf("[%s]: sum(update,delta)=%e,%e (levels=%i,changes=%i); bkwdtm=%f\n", 
-              __func__, updatesum, sum_value_delta, numlevels, actionChanges, time);
-    
-    return (actionChanges != 0);
+    mexPrintf("[%s]: rel.chng=%e, levels=%i, time=%f\n", __func__, total_abs_diff / total_abs, numlevels, time);
+    return total_abs_diff / total_abs;
   }
 
-  int initialize() {
-    clear();
-
+  void initialize(T v, int8_t a) {
+    clear(v, a);
     const double xupright[4] = {_one_pi / 2.0, _one_pi / 2.0, 0.0, 0.0};
-    scatter(xupright, 1.0);
-
-    return 0;
+    scatter(xupright, 0.0, true);
   }
 
-  void clear() {
+  void zero() {
     time = 0.0;
     std::memset(value.data(), 0, sizeof(T) * value.size());
     std::memset(value_update.data(), 0, sizeof(T) * value_update.size());
     std::memset(action.data(), 0, sizeof(int8_t) * action.size());
+  }
+
+  void clear(T v, int8_t a) {
+    for (int k = 0; k < size(); k++) {
+      value[k] = v;
+      action[k] = a;
+    }
   }
 
   void test_scatter_interp(double putval) {
@@ -402,7 +399,7 @@ public:
     const double eta[4] = {0.5, 0.12345, 0.2523, 0.96};
 
     for (int j = 0; j < 5; j++) {
-      clear();
+      zero();
       scatter(X[j], putval);
       const double getval = interp4d(X[j]);
       const double sj = totalValueSum();
@@ -537,14 +534,15 @@ void mexFunction(int nlhs,
     return;
   }
   
-  acbdp.initialize();
-
   //omp_set_num_threads(2);
 
-  //std::vector<double> ulevels = {-1.0, -0.5, 0.0, 0.5, +1.0};
-  std::vector<double> ulevels = {-1.0, 0.0, +1.0};
+  std::vector<double> ulevels = {-2.0, -1, 0.0, 1, +2.0};
+  //acbdp.initialize(std::numeric_limits<float>::lowest(), 2);
+  //acbdp.initialize(std::numeric_limits<float>::quiet_NaN(), 2);
+  acbdp.initialize(-2.0 * itrs * dt, 2);
+
   for (int i = 0; i < itrs; i++) {
-    if (!acbdp.update(&P, ulevels, dt)) break;
+    if (acbdp.update(&P, ulevels, dt) < 1.0e-12) break;
   }
 
   // Output 4D arrays have same memory layout as Octave so just linear copy
@@ -567,13 +565,6 @@ void mexFunction(int nlhs,
       outi[j] = acbdp.gridPoint(i, j);
     }
   }
-
-  /*for (int k = 0; k < acbdp.size(); k++) {
-    int indices[4];
-    acbdp.ind2sub(k, indices);
-    V[acbdp.sub2ind(indices[0], indices[1], indices[2], indices[3])] = (double) k;
-    A[acbdp.sub2ind(indices[0], indices[1], indices[2], indices[3])] = (double) (acbdp.size() - k - 1);
-  }*/
 
   return;
 }
