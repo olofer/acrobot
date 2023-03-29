@@ -4,7 +4,7 @@
  */
 
 //
-// FIXME: the actual value function should be "minimum time" + terminal reward at upright, add -dt to each phase ?
+// FIXME: diagnostics tool to check how many grid cells are traversed during dt given the grid sizes
 // 
 
 #include "mex.h"
@@ -17,7 +17,7 @@
 #include <vector>
 #include <limits>
 
-//#include <omp.h>
+#include <omp.h>
 
 const double _one_pi = 3.14159265358979323846;
 
@@ -151,31 +151,6 @@ public:
     i[3] = (int) std::floor(y3);
     eta[3] = y3 - i[3];
   }
-
-  /*
-  void griddify_faster(const double* x,
-                       int *i,
-                       double* eta) const
-  {
-    const int bias = 100;
-
-    const double y0 = (x[0] - grid_th1[0]) / deltas[0];
-    i[0] = ((int) (y0 + bias)) - bias;
-    eta[0] = y0 - i[0];
-
-    const double y1 = (x[1] - grid_th2[0]) / deltas[1];
-    i[1] = ((int) (y1 + bias)) - bias;
-    eta[1] = y1 - i[1];
-
-    const double y2 = (x[2] - grid_th1d[0]) / deltas[2];
-    i[2] = ((int) (y2 + bias)) - bias;
-    eta[2] = y2 - i[2];
-
-    const double y3 = (x[3] - grid_th2d[0]) / deltas[3];
-    i[3] = ((int) (y3 + bias)) - bias;
-    eta[3] = y3 - i[3];
-  }
-  */
 
   void interp4d_weights(const double* eta, double* w) const {
     const double w0 = (1.0 - eta[0]);
@@ -317,60 +292,67 @@ public:
               bool use_euler = false) 
   {
     acrobot::params localP(*P);
-    int ik[4];
-    double xnext[4];
-    int actionChanges = 0;
 
+    const double epsa = 1.0e-12;
+    const double lowest_value = std::numeric_limits<double>::lowest();
     const int numlevels = ulevels.size();
+
     double updatesum = 0.0;
     double sum_value_delta = 0.0;
+    int action_edits = 0;
 
-    //#pragma omp parallel for
+    #pragma omp parallel for firstprivate(localP) reduction(+:updatesum,sum_value_delta,action_edits)
     for (int k = 0; k < size(); k++) {
+      int ik[4];
       ind2sub(k, ik);
       const double xk[4] = {grid_th1[ik[0]], 
                             grid_th2[ik[1]], 
                             grid_th1d[ik[2]], 
                             grid_th2d[ik[3]]};
 
-      T max_value = std::numeric_limits<T>::lowest();
+      double max_value = lowest_value;
+      double max_value_clean = lowest_value;
       int argmax = -1;
 
       for (int a = 0; a < numlevels; a++) {
-        localP.u = ulevels[a];
+        double xnext[4];
+        const double ua = ulevels[a];
+        localP.u = ua;
+
         if (use_euler) {
           acrobot::step_euler(xnext, xk, dt, &localP);
         } else {
           acrobot::step_heun(xnext, xk, dt, &localP);
         }
-        const T vnext_a = interp4d(xnext); // -dt + value(next) ?
 
-        if (vnext_a > max_value) {
-          max_value = vnext_a;
-          argmax = a;
-        } else if (vnext_a == max_value && ulevels[a] == 0.0) {
+        const double vnext_a_node = interp4d(xnext); 
+        const double vnext_a_regu = vnext_a_node - epsa * ua * ua;
+
+        if (vnext_a_regu > max_value) {
+          max_value = vnext_a_regu;
+          max_value_clean = vnext_a_node;
           argmax = a;
         }
       }
 
-      value_update[k] = max_value;
+      value_update[k] = static_cast<T>(max_value_clean);
       sum_value_delta += std::fabs(value_update[k] - value[k]);
 
       if (action[k] != (int8_t) argmax) {
         action[k] = (int8_t) argmax;
-        actionChanges++;
+        action_edits++;
       }
 
       updatesum += max_value;
     }
 
-    std::memcpy(value.data(), value_update.data(), sizeof(T) * value.size());
+    const int value_edits = overwrite_if_larger();
     time += dt;
 
-    mexPrintf("[%s]: sum(update,delta)=%e,%e (levels=%i,changes=%i); bkwdtm=%f\n", 
-              __func__, updatesum, sum_value_delta, numlevels, actionChanges, time);
+    mexPrintf("[%s]: sum(update,delta)=%e,%e (levels=%i,changes=%i,edits=%i); bkwdtm=%f\n", 
+              __func__, updatesum, sum_value_delta, numlevels, action_edits, value_edits, time);
     
-    return (actionChanges != 0);
+    return !(action_edits == 0 && value_edits == 0);
   }
 
   int initialize() {
@@ -455,6 +437,22 @@ public:
       default:
         return std::numeric_limits<double>::quiet_NaN();
     }
+  }
+
+private:
+  int overwrite_if_larger() {
+    int edits = 0;
+    for (int k = 0; k < size(); k++) {
+      if (value_update[k] > value[k]) {
+        value[k] = value_update[k];
+        edits++;
+      }
+    }
+    return edits;
+  }
+
+  void overwrite() {
+    std::memcpy(value.data(), value_update.data(), sizeof(T) * value.size());
   }
 
 };
@@ -542,7 +540,8 @@ void mexFunction(int nlhs,
   //omp_set_num_threads(2);
 
   //std::vector<double> ulevels = {-1.0, -0.5, 0.0, 0.5, +1.0};
-  std::vector<double> ulevels = {-1.0, 0.0, +1.0};
+  //std::vector<double> ulevels = {-1.0, 0.0, +1.0};
+  std::vector<double> ulevels = {-2.0, 0.0, +2.0};
   for (int i = 0; i < itrs; i++) {
     if (!acbdp.update(&P, ulevels, dt)) break;
   }
@@ -567,13 +566,6 @@ void mexFunction(int nlhs,
       outi[j] = acbdp.gridPoint(i, j);
     }
   }
-
-  /*for (int k = 0; k < acbdp.size(); k++) {
-    int indices[4];
-    acbdp.ind2sub(k, indices);
-    V[acbdp.sub2ind(indices[0], indices[1], indices[2], indices[3])] = (double) k;
-    A[acbdp.sub2ind(indices[0], indices[1], indices[2], indices[3])] = (double) (acbdp.size() - k - 1);
-  }*/
 
   return;
 }

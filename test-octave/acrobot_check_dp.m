@@ -8,7 +8,7 @@
 show_example_slice = false;
 use_dp_feebdack = true;
 
-DP = load('latest-dpsolve.mat');
+DP = load('newest-dpsolve.mat');
 disp(fieldnames(DP));
 
 disp(size(DP.Af));
@@ -45,7 +45,7 @@ N = 2e3;
 Z = NaN(N, 4);
 U = NaN(N, 1);
 T = dtsim * (0:(N - 1));
-Z(1, :) = [-pi/2 + 0.01, -pi/2 - 0.01, 0, 0];
+Z(1, :) = [pi/2 + 0.01, pi/2 - 0.01, 0, 0];
 fprintf(1, 'simulating (dt=%f) for %i steps (DP dt=%f) ... \n', dtsim, N, DP.deltat);
 for t = 1:(N - 1)
   zt = Z(t, :);
