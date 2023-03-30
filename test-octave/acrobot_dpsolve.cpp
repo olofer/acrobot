@@ -1,11 +1,7 @@
 /*
  * USAGE: USAGE: [V, A, g1, g2, g3, g4] = acrobot_dpsolve(P, npts, itrs, dt);
  *
- */
-
-//
-// FIXME: diagnostics tool to check how many grid cells are traversed during dt given the grid sizes
-// 
+ */ 
 
 #include "mex.h"
 #include <cstring>

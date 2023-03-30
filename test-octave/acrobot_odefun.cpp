@@ -5,6 +5,8 @@
  * USAGE: dz = acrobot_odefun(t, z, P, u);            % u optional
  * BUILD: see "acrobot_rebuild_test.m"
  *
+ * ALT. USAGE: [A, B] = acrobot_odefun(ep, z, P, u);   % u optional, return linearization @ (z, u)
+ *
  */
 
 #include "mex.h"
@@ -24,7 +26,7 @@ void mexFunction(int nlhs,
   const int arg_index_params = 2;
   const int arg_index_torque = 3;
 
-  if ((nrhs < 3 || nrhs > 4) || nlhs != 1) {
+  if ((nrhs < 3 || nrhs > 4) || nlhs > 2) {
     mexErrMsgTxt("USAGE: dz = acrobot_odefun(t, z, P [, u]);");
   }
 
@@ -59,10 +61,32 @@ void mexFunction(int nlhs,
     P.u = torque;
   }
 
-  plhs[0] = mxCreateDoubleMatrix(mxGetM(prhs[arg_index_state]), mxGetN(prhs[arg_index_state]), mxREAL);
-  double* ptrdz = (double *) mxGetPr(plhs[0]);
+  if (nlhs == 1) {
+    plhs[0] = mxCreateDoubleMatrix(mxGetM(prhs[arg_index_state]), mxGetN(prhs[arg_index_state]), mxREAL);
+    double* ptrdz = (double *) mxGetPr(plhs[0]);
 
-  acrobot::calculate_dotted_state(ptrdz, time, ptrz, &P);
+    acrobot::calculate_dotted_state(ptrdz, time, ptrz, &P);
+    return;
+  }
 
+  if (nlhs != 2) {
+    mexErrMsgTxt("Must have exactly 1 or 2 outputs requested");
+  }
+
+  // NOTE: use time as finite difference epsilon (it is never actually used anyway)
+  const double ep = time;
+  if (ep <= 0.0 || ep > 0.5) {
+    mexErrMsgTxt("FD epsilon is out of (sane) range (it is specified by the t parameter)");
+  }
+
+  plhs[0] = mxCreateDoubleMatrix(4, 4, mxREAL);
+  plhs[1] = mxCreateDoubleMatrix(4, 1, mxREAL);
+
+  acrobot::linearize_fd((double*) mxGetPr(plhs[0]),
+                        (double*) mxGetPr(plhs[1]),
+                        ptrz,
+                        P.u,
+                        &P,
+                        ep);
   return;
 }
