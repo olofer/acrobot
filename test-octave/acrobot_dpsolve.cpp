@@ -439,6 +439,32 @@ public:
     }
   }
 
+  double averageCellDistance(const acrobot::params* P,
+                             double dt) const
+  {
+    acrobot::params localP(*P);
+    localP.u = 0.0;
+    double total_deltas[4] = {0.0, 0.0, 0.0, 0.0};
+    for (int k = 0; k < size(); k++) {
+      int ik[4];
+      ind2sub(k, ik);
+      const double xk[4] = { grid_th1[ik[0]], grid_th2[ik[1]], grid_th1d[ik[2]], grid_th2d[ik[3]] };
+      double xnext[4];
+      acrobot::step_heun(xnext, xk, dt, &localP);
+      for (int d = 0; d < 4; d++) {
+        total_deltas[d] += std::fabs(xnext[d] - xk[d]);
+      }
+    }
+    double avg_abs_deltas[4] = { total_deltas[0] / size(),
+                                 total_deltas[1] / size(),
+                                 total_deltas[2] / size(),
+                                 total_deltas[3] / size() };
+    return ( avg_abs_deltas[0] / deltas[0] + 
+             avg_abs_deltas[1] / deltas[1] +
+             avg_abs_deltas[2] / deltas[2] +
+             avg_abs_deltas[3] / deltas[3] ) / 4;
+  }
+
 private:
   int overwrite_if_larger() {
     int edits = 0;
@@ -532,6 +558,11 @@ void mexFunction(int nlhs,
   if (nlhs != 6) {
     mexPrintf("[%s]: (not 6 output arguments) running self-check\n", __func__);
     acbdp.test_scatter_interp(2.56);
+
+    const double avg_cell_dist = acbdp.averageCellDistance(&P, dt);
+    mexPrintf("[%s]: <cell-delta> = %f\n", __func__, avg_cell_dist);
+
+    // (NOTE: one critical issue is the very first set of iterations -- require almost direct hits on target to proceed correctly)
     return;
   }
   
