@@ -209,9 +209,88 @@ double total_mechanical_energy(const double* z,
   return (Krot + Klin + Vgra);
 }
 
-} // end namespace acrobot
+void step_euler(double* znext,
+                const double* znow,
+                double dt, 
+                const params* parms)
+{
+  double zdot[4];
+  calculate_dotted_state(zdot, 0.0, znow, parms);
+  znext[0] = znow[0] + dt * zdot[0]; 
+  znext[1] = znow[1] + dt * zdot[1]; 
+  znext[2] = znow[2] + dt * zdot[2]; 
+  znext[3] = znow[3] + dt * zdot[3]; 
+}
 
-/*
-#if defined(HAVE_OCTAVE) || defined(MATLAB_MEX_FILE)
-#endif
-*/
+void step_heun(double* znext,
+               const double* znow,
+               double dt, 
+               const params* parms)
+{
+  double zdot[4];
+  double zpred[4];
+  double zpred_dot[4];
+
+  calculate_dotted_state(zdot, 0.0, znow, parms);
+  zpred[0] = znow[0] + dt * zdot[0]; 
+  zpred[1] = znow[1] + dt * zdot[1]; 
+  zpred[2] = znow[2] + dt * zdot[2]; 
+  zpred[3] = znow[3] + dt * zdot[3]; 
+
+  calculate_dotted_state(zpred_dot, 0.0, zpred, parms);
+  znext[0] = znow[0] + dt * (zdot[0] + zpred_dot[0]) / 2.0;
+  znext[1] = znow[1] + dt * (zdot[1] + zpred_dot[1]) / 2.0;
+  znext[2] = znow[2] + dt * (zdot[2] + zpred_dot[2]) / 2.0;
+  znext[3] = znow[3] + dt * (zdot[3] + zpred_dot[3]) / 2.0;
+}
+
+void linearize_fd(double* A,
+                  double* B,
+                  const double* z0,
+                  double u0,
+                  const params* parms,
+                  double ep)
+{
+  params P(*parms);
+  P.u = u0;
+
+  double zdothi[4];
+  double zdotlo[4];
+
+  for (int i = 0; i < 4; i++) {
+    double zhi[4] = {z0[0], z0[1], z0[2], z0[3]};
+    zhi[i] += ep;
+
+    calculate_dotted_state(zdothi, 0.0, zhi, &P);
+
+    double zlo[4] = {z0[0], z0[1], z0[2], z0[3]};
+    zlo[i] -= ep;
+
+    calculate_dotted_state(zdotlo, 0.0, zlo, &P);
+
+    double Ai[4] = {(zdothi[0] - zdotlo[0]) / (2.0 * ep),
+                    (zdothi[1] - zdotlo[1]) / (2.0 * ep),
+                    (zdothi[2] - zdotlo[2]) / (2.0 * ep),
+                    (zdothi[3] - zdotlo[3]) / (2.0 * ep)};
+    
+    A[4 * i + 0] = Ai[0];
+    A[4 * i + 1] = Ai[1];
+    A[4 * i + 2] = Ai[2];
+    A[4 * i + 3] = Ai[3];
+  }
+
+  if (B == nullptr) return;
+
+  P.u = u0 + ep;
+  calculate_dotted_state(zdothi, 0.0, z0, &P);
+
+  P.u = u0 - ep;
+  calculate_dotted_state(zdotlo, 0.0, z0, &P);
+
+  B[0] = (zdothi[0] - zdotlo[0]) / (2.0 * ep);
+  B[1] = (zdothi[1] - zdotlo[1]) / (2.0 * ep);
+  B[2] = (zdothi[2] - zdotlo[2]) / (2.0 * ep);
+  B[3] = (zdothi[3] - zdotlo[3]) / (2.0 * ep);
+}
+
+} // end namespace acrobot

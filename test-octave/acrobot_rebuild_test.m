@@ -1,3 +1,5 @@
+% CLI usage: octave --no-window-system --eval "acrobot_rebuild_test"
+
 isOctave = (exist('OCTAVE_VERSION', 'builtin') ~= 0);
 assert(isOctave, 'script only supports Octave at the moment');
 mexfilename = sprintf('acrobot_odefun.%s', mexext());
@@ -9,12 +11,37 @@ delete(mexfilename);
 disp('building..');
 mkoctfile --verbose --mex --strip acrobot_odefun.cpp;
 
+try 
+  pkg('load', 'control');
+  hasControlPackage = true;
+catch
+  hasControlPackage = false;
+end_try_catch
+
 % Run the Octave simulator program & then resimulate using C++/MEX version
 disp('testing (reference)..');
 muA = 0.0125;
 muB = 0.0250;
 rep = acrobot_test(muA, muB);
 P = rep.params;
+
+fprintf(1, 'checking stationary points (has control package: %i)..\n', hasControlPackage);
+Zeqs = [-pi/2, -pi/2, 0, 0;
+        -pi/2,  pi/2, 0, 0; 
+         pi/2, -pi/2, 0, 0;
+         pi/2,  pi/2, 0, 0];
+epfd = 1.0e-4;
+dotZeqs = NaN(4, 4);
+for i = 1:4
+  dotZeqs(i, :) = acrobot_odefun(0, Zeqs(i, :), P, 0);
+  assert(norm(dotZeqs(i, :)) < 1.0e-14, 'not stationary point');
+  [Ai, Bi] = acrobot_odefun(epfd, Zeqs(i, :), P, 0);
+  disp(sum(real(eig(Ai)) > 0)); % output should be: 0, 1, 1, 2
+  if hasControlPackage
+    % Confirm that each stationary point is controllable with state feedback
+    assert(isctrb(Ai, Bi), 'not controllable stationary point');
+  end
+end
 
 % Check equivalance to above simulation
 Tref = rep.t;
