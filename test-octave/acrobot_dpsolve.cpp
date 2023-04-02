@@ -360,6 +360,32 @@ public:
     return 0;
   }
 
+  void initialize_terminal(int cfgnum) {
+    const double equilibria[4 * 4] = {-_one_pi / 2.0, -_one_pi / 2.0, 0.0, 0.0,
+                                      -_one_pi / 2.0,  _one_pi / 2.0, 0.0, 0.0,
+                                       _one_pi / 2.0, -_one_pi / 2.0, 0.0, 0.0,
+                                       _one_pi / 2.0,  _one_pi / 2.0, 0.0, 0.0};
+    double target[4];
+    if (cfgnum < 0 || cfgnum > 3) cfgnum = 0;
+    std::memcpy(target, &equilibria[4 * cfgnum], 4 * sizeof(double));
+    for (int k = 0; k < size(); k++) {
+      int ik[4];
+      ind2sub(k, ik);
+      const double xk[4] = {grid_th1[ik[0]], grid_th2[ik[1]], grid_th1d[ik[2]], grid_th2d[ik[3]]};
+      double ssq = 0.0;
+      for (int i = 0; i < 4; i++) {
+        double deltai = xk[i] - target[i];
+        if (i == 0 || i == 1) {
+          if (deltai < -_one_pi) deltai += _one_pi;
+          if (deltai > _one_pi) deltai -= _one_pi; 
+        }
+        ssq += deltai * deltai;
+      }
+      const double reward = -1.0 * std::sqrt(ssq);
+      value[k] = reward;
+    }
+  }
+
   void clear() {
     time = 0.0;
     std::memset(value.data(), 0, sizeof(T) * value.size());
@@ -562,13 +588,10 @@ void mexFunction(int nlhs,
     return;
   }
   
-  acbdp.initialize();
+  acbdp.initialize_terminal(3);
 
-  //omp_set_num_threads(2);
+  std::vector<double> ulevels = {-1.0, -0.5, 0.0, 0.5, +1.0};
 
-  //std::vector<double> ulevels = {-1.0, -0.5, 0.0, 0.5, +1.0};
-  //std::vector<double> ulevels = {-1.0, 0.0, +1.0};
-  std::vector<double> ulevels = {-2.0, 0.0, +2.0};
   for (int i = 0; i < itrs; i++) {
     if (!acbdp.update(&P, ulevels, dt)) break;
   }
