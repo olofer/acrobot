@@ -26,8 +26,11 @@ WebAssembly.instantiateStreaming(fetch('browser_sim.wasm'), importObject)
     var increaseFriction = results.instance.exports.increaseFriction;
     var getFriction = results.instance.exports.getFriction;
     var getEnergy = results.instance.exports.getEnergy;
+    var freezeTorque = results.instance.exports.freezeTorque;
 
     const jointWithFriction = 1;
+    var applyJointLock = false;
+    var refLockValue = 0.0;
     
     function keyDownEvent(e)
     {
@@ -36,6 +39,7 @@ WebAssembly.instantiateStreaming(fetch('browser_sim.wasm'), importObject)
 
         if (key == 'z' || key == 'Z') {
             resetAcrobotState(0.0, 0.0, 0.0, 0.0);
+            applyJointLock = false;
         }
 
         if (key == 'd' || key == 'D') {
@@ -43,6 +47,7 @@ WebAssembly.instantiateStreaming(fetch('browser_sim.wasm'), importObject)
                               0.01 * (Math.random() - 0.5) - Math.PI / 2, 
                               0.0, 
                               0.0);
+            applyJointLock = false;
         }
 
         if (key == 'u' || key == 'U') {
@@ -50,6 +55,7 @@ WebAssembly.instantiateStreaming(fetch('browser_sim.wasm'), importObject)
                               0.01 * (Math.random() - 0.5) + Math.PI / 2, 
                               0.0, 
                               0.0);
+            applyJointLock = false;
         }
 
         if (key == 'r' || key == 'R') {
@@ -57,6 +63,12 @@ WebAssembly.instantiateStreaming(fetch('browser_sim.wasm'), importObject)
                               2.0 * Math.PI * Math.random(), 
                               0.0, 
                               0.0);
+            applyJointLock = false;
+        }
+
+        if (key == 'f' || key == 'F') {
+            applyJointLock = !applyJointLock;
+            applyTorque(0.0);
         }
     
         if (code == 39) // right
@@ -70,10 +82,12 @@ WebAssembly.instantiateStreaming(fetch('browser_sim.wasm'), importObject)
         else if (code == 38) // up
         {
             applyTorque(1.0);
+            applyJointLock = false;
         }
         else if (code == 40) // down
         {
             applyTorque(-1.0);
+            applyJointLock = false;
         }
     }
 
@@ -179,7 +193,14 @@ WebAssembly.instantiateStreaming(fetch('browser_sim.wasm'), importObject)
 
         const E = getEnergy();
         ctx.fillText('energy: ' + E.toFixed(3) + ' [J]', 10.0, 80.0);
+
+        if (applyJointLock) {
+            ctx.fillText('locked at: ' + refLockValue.toFixed(3) + ' [rad]', 10.0, 100.0);
+        }
     }
+
+    const lock_omega_nought = 2.0 * Math.PI / 0.005;
+    const lock_feedback_zeta = 1.0;
     
     //var fps = 60;
     var startTime = Date.now();
@@ -199,6 +220,11 @@ WebAssembly.instantiateStreaming(fetch('browser_sim.wasm'), importObject)
         delta += elapsedTimeSeconds;
 
         while (delta >= 0.0) {
+            if (applyJointLock) {
+                applyTorque(freezeTorque(refLockValue, lock_omega_nought, lock_feedback_zeta));
+            } else {
+                refLockValue = getTheta(0) - getTheta(1);
+            }
             evolveAcrobot(dt);
             delta -= dt;
         }

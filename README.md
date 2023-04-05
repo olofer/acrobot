@@ -10,8 +10,7 @@ Run it directly online <https://raw.githack.com/olofer/acrobot/main/payload/inde
 - `D` reset to hanging position (minimum pot. energy)
 - `up/down` apply torque at common joint in either direction
 - `left/right` increase/decrease friction at common joint
-
-More options: TBD
+- `F` toggle lock of the arm relative angle
 
 ## Build WebAssembly & run locally
 Requires (emscripten) `emcc` compiler and `emrun` utility. Scripts may or may not assume a WSL2 environment.

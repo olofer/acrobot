@@ -81,6 +81,22 @@ struct AcrobotSim
     compute_cms();
   }
 
+  double compute_freeze_torque(double y0,
+                               double omega0, 
+                               double zeta = 1.0) const
+  {
+    // Let y = (theta1 - theta2) - y0
+    // Map to 2nd order linear ODE: m * y'' + c * y' + k * y = 0
+    // omega0 = sqrt(k / m), c = zeta * 2 * m * omega0, zeta = 1 is critical damping
+    const double y = theta1 - theta2 - y0;
+    const double yprime = theta1dot - theta2dot;
+    // The u-part of ypprime: ddot(theta1) - ddot(theta2) ~ (1/I1 + 1/I2) * u
+    const double Ieff = (P.I1 * P.I2) / (P.I1 + P.I2);
+    // y'' + (c / m) * y' + (k / m) * y = 0, can ~ be rewritten as
+    // (1 / Ieff) * u + 2 * zeta * omega0 * y' + omega0^2 * y = 0; solve for u and return
+    return Ieff * omega0 * (-1.0 * omega0 * y - 2.0 * zeta * yprime);
+  }
+
 };
 
 static constexpr double nominal_gravity_acc = 9.82;
@@ -182,6 +198,14 @@ EMSCRIPTEN_KEEPALIVE
 double getTorque(void)
 {
     return acb.P.u;
+}
+
+EMSCRIPTEN_KEEPALIVE
+double freezeTorque(double y0, 
+                    double omega0, 
+                    double zeta)
+{
+    return acb.compute_freeze_torque(y0, omega0, zeta);
 }
 
 EMSCRIPTEN_KEEPALIVE
