@@ -23,8 +23,11 @@ disp(unique(DP.Af(:)));
 disp(fieldnames(DP.P));
 
 if show_example_slice
+  imid3 = round(size(DP.Vf, 3) / 2);
+  imid4 = round(size(DP.Vf, 4) / 2);
+
   figure;
-  imagesc(DP.g1, DP.g2, DP.Vf(:, :, 32, 34));
+  imagesc(DP.g1, DP.g2, DP.Vf(:, :, imid3, imid4));
   axis xy;
   axis equal;
   xlabel('theta1');
@@ -32,7 +35,7 @@ if show_example_slice
   title('Value function slice');
 
   figure;
-  imagesc(DP.g1, DP.g2, DP.Af(:, :, 32, 34));
+  imagesc(DP.g1, DP.g2, DP.Af(:, :, imid3, imid4));
   axis xy;
   axis equal;
   xlabel('theta1');
@@ -40,12 +43,13 @@ if show_example_slice
   title('Action function slice');
 end
 
-dtsim = DP.deltat; %5e-3;
-N = 5e3;
+dtsim = 3e-3; %DP.deltat; %5e-3;
+N = 3e3;
 Z = NaN(N, 4);
 U = NaN(N, 1);
 T = dtsim * (0:(N - 1));
-Z(1, :) = [-pi/2 + 0.01, -pi/2 - 0.01, 0, 0];
+%Z(1, :) = [-pi/2 - 1e-3, -pi/2 + 1e-3, 0, 0];
+Z(1, :) = [0, 0, pi, pi];
 fprintf(1, 'simulating (dt=%f) for %i steps (DP dt=%f) ... \n', dtsim, N, DP.deltat);
 for t = 1:(N - 1)
   zt = Z(t, :);
@@ -78,5 +82,10 @@ end
 
 figure;
 stairs(T, [Z, U], 'LineWidth', 2);
-legend('th1', 'th2', 'th1d', 'th2d', 'u');
+legend('th1 [rad]', 'th2 [rad]', 'th1d [rad/s]', 'th2d [rad/s]', 'u [Nm]');
 xlabel('time [sec]');
+hold on;
+for ii = -1:1
+  line([T(1), T(end)], 2 * pi * ii + [pi/2, pi/2], 'Color', 'c', 'LineStyle', '--');
+  line([T(1), T(end)], 2 * pi * ii + [-pi/2, -pi/2], 'Color', 'y', 'LineStyle', '-.');
+end 

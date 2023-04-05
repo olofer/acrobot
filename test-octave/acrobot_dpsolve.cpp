@@ -34,6 +34,8 @@ private:
   std::vector<int8_t> action;
   double time;
 
+  T edge_value;
+
 public:
   acrobotDP(int nth1, 
             int nth2, 
@@ -49,7 +51,8 @@ public:
   value_update(value),
   action(nth1 * nth2 * ndot1 * ndot2), 
   dims{nth1, nth2, ndot1, ndot2},
-  time(0.0)
+  time(0.0),
+  edge_value(-1.0e6)
   {
     for (int i = 0; i < nth1; i++) {
       grid_th1[i] = (2.0 * _one_pi * i) / nth1; 
@@ -106,12 +109,21 @@ public:
   }
 
   int lookupindex(int i0, int i1, int i2, int i3) const {
-    if (i2 < 0 || i2 >= dims[2]) return 0.0;
-    if (i3 < 0 || i3 >= dims[3]) return 0.0;
+    //if (i2 < 0 || i2 >= dims[2]) return edge_value;
+    //if (i3 < 0 || i3 >= dims[3]) return edge_value;
+
     if (i0 < 0) i0 += dims[0];
     if (i0 >= dims[0]) i0 -= dims[0];
+
     if (i1 < 0) i1 += dims[1];
     if (i1 >= dims[1]) i1 -= dims[1];
+
+    if (i2 < 0) i2 = 0;
+    if (i2 >= dims[2]) i2 = dims[2] - 1;
+
+    if (i3 < 0) i3 = 0;
+    if (i3 >= dims[3]) i3 = dims[3] - 1;
+
     return sub2ind(i0, i1, i2, i3);
   }
 
@@ -321,7 +333,7 @@ public:
           acrobot::step_heun(xnext, xk, dt, &localP);
         }
 
-        const double vnext_a_node = interp4d(xnext); 
+        const double vnext_a_node = -dt + interp4d(xnext); 
         const double vnext_a_regu = vnext_a_node - epsa * ua * ua;
 
         if (vnext_a_regu > max_value) {
@@ -351,16 +363,9 @@ public:
     return !(action_edits == 0 && value_edits == 0);
   }
 
-  int initialize() {
-    clear();
-
-    const double xupright[4] = {_one_pi / 2.0, _one_pi / 2.0, 0.0, 0.0};
-    scatter(xupright, 1.0);
-
-    return 0;
-  }
-
-  void initialize_terminal(int cfgnum) {
+  void initialize_terminal(int cfgnum, 
+                           double sharpness = 100.0) 
+  {
     const double equilibria[4 * 4] = {-_one_pi / 2.0, -_one_pi / 2.0, 0.0, 0.0,
                                       -_one_pi / 2.0,  _one_pi / 2.0, 0.0, 0.0,
                                        _one_pi / 2.0, -_one_pi / 2.0, 0.0, 0.0,
@@ -376,12 +381,29 @@ public:
       for (int i = 0; i < 4; i++) {
         double deltai = xk[i] - target[i];
         if (i == 0 || i == 1) {
-          if (deltai < -_one_pi) deltai += _one_pi;
-          if (deltai > _one_pi) deltai -= _one_pi; 
+          if (deltai < -_one_pi) deltai += 2.0 * _one_pi;
+          if (deltai > _one_pi) deltai -= 2.0 * _one_pi; 
         }
         ssq += deltai * deltai;
       }
-      const double reward = -1.0 * std::sqrt(ssq);
+      const double reward = -1.0 * sharpness * std::sqrt(ssq);
+      value[k] = reward;
+    }
+  }
+
+  void initialize_terminal_swing(double thetadot)
+  {
+    const double sharpness = 10.0;
+    for (int k = 0; k < size(); k++) {
+      int ik[4];
+      ind2sub(k, ik);
+      const double xk[4] = {grid_th1[ik[0]], grid_th2[ik[1]], grid_th1d[ik[2]], grid_th2d[ik[3]]};
+
+      const double diff_sin = std::sin(xk[0]) - std::sin(xk[1]);
+      const double diff_cos = std::cos(xk[0]) - std::cos(xk[1]);
+      const double diff_dot = std::fabs(xk[2] - xk[3]);
+
+      const double reward = -1.0 * sharpness * (std::sqrt(diff_sin * diff_sin + diff_cos * diff_cos) + diff_dot);
       value[k] = reward;
     }
   }
@@ -588,7 +610,8 @@ void mexFunction(int nlhs,
     return;
   }
   
-  acbdp.initialize_terminal(3);
+  //acbdp.initialize_terminal(3);
+  acbdp.initialize_terminal_swing(2.0 * _one_pi);
 
   std::vector<double> ulevels = {-1.0, -0.5, 0.0, 0.5, +1.0};
 
