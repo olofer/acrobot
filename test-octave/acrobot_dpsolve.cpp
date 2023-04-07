@@ -52,7 +52,7 @@ public:
   action(nth1 * nth2 * ndot1 * ndot2), 
   dims{nth1, nth2, ndot1, ndot2},
   time(0.0),
-  edge_value(-1.0e6)
+  edge_value(-100.0)
   {
     for (int i = 0; i < nth1; i++) {
       grid_th1[i] = (2.0 * _one_pi * i) / nth1; 
@@ -108,9 +108,13 @@ public:
     return true;
   }
 
+  void set_edge_value(T ev) {
+    edge_value = ev;
+  }
+
   int lookupindex(int i0, int i1, int i2, int i3) const {
-    //if (i2 < 0 || i2 >= dims[2]) return edge_value;
-    //if (i3 < 0 || i3 >= dims[3]) return edge_value;
+    if (i2 < 0 || i2 >= dims[2]) return edge_value;
+    if (i3 < 0 || i3 >= dims[3]) return edge_value;
 
     if (i0 < 0) i0 += dims[0];
     if (i0 >= dims[0]) i0 -= dims[0];
@@ -118,11 +122,11 @@ public:
     if (i1 < 0) i1 += dims[1];
     if (i1 >= dims[1]) i1 -= dims[1];
 
-    if (i2 < 0) i2 = 0;
+    /*if (i2 < 0) i2 = 0;
     if (i2 >= dims[2]) i2 = dims[2] - 1;
 
     if (i3 < 0) i3 = 0;
-    if (i3 >= dims[3]) i3 = dims[3] - 1;
+    if (i3 >= dims[3]) i3 = dims[3] - 1; */
 
     return sub2ind(i0, i1, i2, i3);
   }
@@ -363,6 +367,7 @@ public:
     return !(action_edits == 0 && value_edits == 0);
   }
 
+  // FIXME: make this a proper "terminal set indicator" instead
   void initialize_terminal(int cfgnum, 
                            double sharpness = 100.0) 
   {
@@ -391,19 +396,34 @@ public:
     }
   }
 
-  void initialize_terminal_swing(double thetadot)
+  void initialize_terminal_swing(const acrobot::params* P, double E)
   {
-    const double sharpness = 10.0;
+    const double cos_alfa = std::cos(2.0 * _one_pi / 24.0);
+    //const double sharpness = 10.0;
     for (int k = 0; k < size(); k++) {
       int ik[4];
       ind2sub(k, ik);
       const double xk[4] = {grid_th1[ik[0]], grid_th2[ik[1]], grid_th1d[ik[2]], grid_th2d[ik[3]]};
 
-      const double diff_sin = std::sin(xk[0]) - std::sin(xk[1]);
-      const double diff_cos = std::cos(xk[0]) - std::cos(xk[1]);
-      const double diff_dot = std::fabs(xk[2] - xk[3]);
+      double xy1[4];
+      double xy2[4];
 
-      const double reward = -1.0 * sharpness * (std::sqrt(diff_sin * diff_sin + diff_cos * diff_cos) + diff_dot);
+      acrobot::calculate_CM_state(xy1, xy2, xk, P);
+      const double Ek = acrobot::total_mechanical_energy(xk, xy1, xy2, P);
+
+      //const double reward = -1.0 * sharpness * (std::fabs(Ek - E) + std::fabs(xk[0] - xk[1]));
+
+      const double v1x = std::cos(xk[0]);
+      const double v1y = std::sin(xk[0]);
+      const double v2x = std::cos(xk[1]);
+      const double v2y = std::sin(xk[1]);
+
+      const double dot12 = v1x * v2x + v1y * v2y;
+
+      double reward = edge_value;
+      //if (std::fabs(Ek - E) < 1.0 && std::fabs(xk[0] - xk[1]) < 2.0 * _one_pi / 24.0) reward = 0.0;
+      if (std::fabs(Ek - E) <= 1.0 && dot12 <= cos_alfa) reward = 0.0;
+
       value[k] = reward;
     }
   }
@@ -609,9 +629,11 @@ void mexFunction(int nlhs,
     // (NOTE: one critical issue is the very first set of iterations -- require almost direct hits on target to proceed correctly)
     return;
   }
-  
+
+  acbdp.clear();
+  acbdp.set_edge_value(-2.0 * itrs * dt);
+  acbdp.initialize_terminal_swing(&P, 10.0);
   //acbdp.initialize_terminal(3);
-  acbdp.initialize_terminal_swing(2.0 * _one_pi);
 
   std::vector<double> ulevels = {-1.0, -0.5, 0.0, 0.5, +1.0};
 

@@ -22,7 +22,7 @@ P.muB = 0.0;
 
 disp('calling DP solver..');
 npts = [75, 75, 80, 80]; 
-itrs = 1000;
+itrs = 800;
 deltat = 8e-3;
 
 %acrobot_dpsolve(P, npts, itrs, deltat);
