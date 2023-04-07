@@ -399,7 +399,7 @@ public:
   void initialize_terminal_swing(const acrobot::params* P, double E)
   {
     const double cos_alfa = std::cos(2.0 * _one_pi / 24.0);
-    //const double sharpness = 10.0;
+  
     for (int k = 0; k < size(); k++) {
       int ik[4];
       ind2sub(k, ik);
@@ -411,8 +411,6 @@ public:
       acrobot::calculate_CM_state(xy1, xy2, xk, P);
       const double Ek = acrobot::total_mechanical_energy(xk, xy1, xy2, P);
 
-      //const double reward = -1.0 * sharpness * (std::fabs(Ek - E) + std::fabs(xk[0] - xk[1]));
-
       const double v1x = std::cos(xk[0]);
       const double v1y = std::sin(xk[0]);
       const double v2x = std::cos(xk[1]);
@@ -421,8 +419,7 @@ public:
       const double dot12 = v1x * v2x + v1y * v2y;
 
       double reward = edge_value;
-      //if (std::fabs(Ek - E) < 1.0 && std::fabs(xk[0] - xk[1]) < 2.0 * _one_pi / 24.0) reward = 0.0;
-      if (std::fabs(Ek - E) <= 1.0 && dot12 <= cos_alfa) reward = 0.0;
+      if (std::fabs(Ek - E) <= 1.0 && dot12 >= cos_alfa) reward = 0.0;
 
       value[k] = reward;
     }
@@ -632,7 +629,7 @@ void mexFunction(int nlhs,
 
   acbdp.clear();
   acbdp.set_edge_value(-2.0 * itrs * dt);
-  acbdp.initialize_terminal_swing(&P, 10.0);
+  acbdp.initialize_terminal_swing(&P, 5.0);
   //acbdp.initialize_terminal(3);
 
   std::vector<double> ulevels = {-1.0, -0.5, 0.0, 0.5, +1.0};
