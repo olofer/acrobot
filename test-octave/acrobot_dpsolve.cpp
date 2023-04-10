@@ -367,9 +367,13 @@ public:
     return !(action_edits == 0 && value_edits == 0);
   }
 
-  // FIXME: make this a proper "terminal set indicator" instead
-  void initialize_terminal(int cfgnum, 
-                           double sharpness = 100.0) 
+  double wrap_angle_diff(double a) const {
+    while (a < -_one_pi) a += 2.0 * _one_pi;
+    while (a > _one_pi) a -= 2.0 * _one_pi;
+    return a;
+  }
+
+  void initialize_terminal(int cfgnum) 
   {
     const double equilibria[4 * 4] = {-_one_pi / 2.0, -_one_pi / 2.0, 0.0, 0.0,
                                       -_one_pi / 2.0,  _one_pi / 2.0, 0.0, 0.0,
@@ -382,23 +386,27 @@ public:
       int ik[4];
       ind2sub(k, ik);
       const double xk[4] = {grid_th1[ik[0]], grid_th2[ik[1]], grid_th1d[ik[2]], grid_th2d[ik[3]]};
-      double ssq = 0.0;
-      for (int i = 0; i < 4; i++) {
-        double deltai = xk[i] - target[i];
-        if (i == 0 || i == 1) {
-          if (deltai < -_one_pi) deltai += 2.0 * _one_pi;
-          if (deltai > _one_pi) deltai -= 2.0 * _one_pi; 
-        }
-        ssq += deltai * deltai;
-      }
-      const double reward = -1.0 * sharpness * std::sqrt(ssq);
+
+      const double delta0 = wrap_angle_diff(target[0] - xk[0]);
+      const double delta1 = wrap_angle_diff(target[1] - xk[1]);
+      const double delta2 = target[2] - xk[2];
+      const double delta3 = target[3] - xk[3];
+
+      double reward = edge_value;
+
+      if (std::fabs(delta0) < 2.0 * _one_pi / 12 &&
+          std::fabs(delta1) < 2.0 * _one_pi / 12 &&
+          std::fabs(delta2) < 0.50 &&
+          std::fabs(delta3) < 0.50)
+        reward = 0.0;
+
       value[k] = reward;
     }
   }
 
   void initialize_terminal_swing(const acrobot::params* P, double E)
   {
-    const double cos_alfa = std::cos(2.0 * _one_pi / 24.0);
+    const double cos_alfa = std::cos(2.0 * _one_pi / 12.0);
   
     for (int k = 0; k < size(); k++) {
       int ik[4];
@@ -419,7 +427,7 @@ public:
       const double dot12 = v1x * v2x + v1y * v2y;
 
       double reward = edge_value;
-      if (std::fabs(Ek - E) <= 1.0 && dot12 >= cos_alfa) reward = 0.0;
+      if (std::fabs(Ek - E) <= 2.0 && dot12 >= cos_alfa) reward = 0.0;
 
       value[k] = reward;
     }
@@ -629,10 +637,11 @@ void mexFunction(int nlhs,
 
   acbdp.clear();
   acbdp.set_edge_value(-2.0 * itrs * dt);
-  acbdp.initialize_terminal_swing(&P, 5.0);
-  //acbdp.initialize_terminal(3);
+  //acbdp.initialize_terminal_swing(&P, 0.0);
+  acbdp.initialize_terminal(3);
 
-  std::vector<double> ulevels = {-1.0, -0.5, 0.0, 0.5, +1.0};
+  //std::vector<double> ulevels = {-1.0, -0.5, 0.0, 0.5, +1.0};
+  std::vector<double> ulevels = {-1.0, 0.0, +1.0};
 
   for (int i = 0; i < itrs; i++) {
     if (!acbdp.update(&P, ulevels, dt)) break;
