@@ -3,7 +3,7 @@ assert(isOctave, 'script only supports Octave at the moment');
 mexfilename = sprintf('acrobot_dpsolve.%s', mexext());
 
 disp(sprintf('cleaning \"%s\"..', mexfilename));
-autoload('acrobot_dpsolve', file_in_loadpath(mexfilename), "remove"); 
+autoload('acrobot_dpsolve', file_in_loadpath(mexfilename), 'remove'); 
 delete(mexfilename);
 
 disp('building..');
@@ -24,11 +24,12 @@ disp('calling DP solver..');
 npts = [75, 75, 80, 80]; 
 itrs = 1200;
 deltat = 8e-3;
+tdisc = 5.0;
 
-%acrobot_dpsolve(P, npts, itrs, deltat);
+%acrobot_dpsolve(P, npts, itrs, deltat, tdisc);
 %return;
 
-[V, A, g1, g2, g3, g4] = acrobot_dpsolve(P, npts, itrs, deltat);
+[V, A, g1, g2, g3, g4] = acrobot_dpsolve(P, npts, itrs, deltat, tdisc);
 
 disp(unique(A(:)));
 disp([sum(V(:)), min(V(:)), max(V(:)), mean(V(:))]);

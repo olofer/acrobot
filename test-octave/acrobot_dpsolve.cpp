@@ -1,5 +1,5 @@
 /*
- * USAGE: USAGE: [V, A, g1, g2, g3, g4] = acrobot_dpsolve(P, npts, itrs, dt);
+ * USAGE: USAGE: [V, A, g1, g2, g3, g4] = acrobot_dpsolve(P, npts, itrs, dt, tdisc);
  *
  */ 
 
@@ -301,9 +301,12 @@ public:
   bool update(const acrobot::params* P,
               const std::vector<double>& ulevels,
               double dt,
+              double tdisc,
               bool use_euler = false) 
   {
     acrobot::params localP(*P);
+
+    const double gamma = std::exp(-1.0 * dt / tdisc); // 1-step (dt) survival probability; rate = 1/tdisc
 
     const double epsa = 1.0e-12;
     const double lowest_value = std::numeric_limits<double>::lowest();
@@ -322,6 +325,8 @@ public:
                             grid_th1d[ik[2]], 
                             grid_th2d[ik[3]]};
 
+      const double Rk = reward_swing(xk, &localP, 0.0);  // assume independence of u(a)
+
       double max_value = lowest_value;
       double max_value_clean = lowest_value;
       int argmax = -1;
@@ -337,7 +342,7 @@ public:
           acrobot::step_heun(xnext, xk, dt, &localP);
         }
 
-        const double vnext_a_node = -dt + interp4d(xnext); 
+        const double vnext_a_node = dt * Rk + gamma * interp4d(xnext); 
         const double vnext_a_regu = vnext_a_node - epsa * ua * ua;
 
         if (vnext_a_regu > max_value) {
@@ -355,16 +360,17 @@ public:
         action_edits++;
       }
 
-      updatesum += max_value;
+      updatesum += max_value_clean;
     }
 
-    const int value_edits = overwrite_if_larger();
+    overwrite();
+
     time += dt;
 
-    mexPrintf("[%s]: sum(update,delta)=%e,%e (levels=%i,changes=%i,edits=%i); bkwdtm=%f\n", 
-              __func__, updatesum, sum_value_delta, numlevels, action_edits, value_edits, time);
+    mexPrintf("[%s]: <value>=%e (lvls=%i, aedits=%i); bkwdtm=%f, eps(delta)=%e\n", 
+              __func__, updatesum / size(), numlevels, action_edits, time, sum_value_delta / std::fabs(updatesum));
     
-    return !(action_edits == 0 && value_edits == 0);
+    return true;
   }
 
   double wrap_angle_diff(double a) const {
@@ -373,6 +379,7 @@ public:
     return a;
   }
 
+/*
   void initialize_terminal(int cfgnum) 
   {
     const double equilibria[4 * 4] = {-_one_pi / 2.0, -_one_pi / 2.0, 0.0, 0.0,
@@ -403,34 +410,27 @@ public:
       value[k] = reward;
     }
   }
+*/
 
-  void initialize_terminal_swing(const acrobot::params* P, double E)
+  double reward_swing(const double* z, 
+                      const acrobot::params* P, 
+                      double E) const
   {
-    const double cos_alfa = std::cos(2.0 * _one_pi / 12.0);
-  
-    for (int k = 0; k < size(); k++) {
-      int ik[4];
-      ind2sub(k, ik);
-      const double xk[4] = {grid_th1[ik[0]], grid_th2[ik[1]], grid_th1d[ik[2]], grid_th2d[ik[3]]};
+    double xy1[4];
+    double xy2[4];
 
-      double xy1[4];
-      double xy2[4];
+    acrobot::calculate_CM_state(xy1, xy2, z, P);
+    const double Ek = acrobot::total_mechanical_energy(z, xy1, xy2, P);
+    const double Esize = 1.0 + std::fabs(E);
 
-      acrobot::calculate_CM_state(xy1, xy2, xk, P);
-      const double Ek = acrobot::total_mechanical_energy(xk, xy1, xy2, P);
+    const double v1x = std::cos(z[0]);
+    const double v1y = std::sin(z[0]);
+    const double v2x = std::cos(z[1]);
+    const double v2y = std::sin(z[1]);
 
-      const double v1x = std::cos(xk[0]);
-      const double v1y = std::sin(xk[0]);
-      const double v2x = std::cos(xk[1]);
-      const double v2y = std::sin(xk[1]);
+    const double dot12 = v1x * v2x + v1y * v2y; // |.| <= 1, want it to be 1
 
-      const double dot12 = v1x * v2x + v1y * v2y;
-
-      double reward = edge_value;
-      if (std::fabs(Ek - E) <= 2.0 && dot12 >= cos_alfa) reward = 0.0;
-
-      value[k] = reward;
-    }
+    return -1.0 * (std::fabs(Ek - E) / Esize + (1.0 - dot12));
   }
 
   void clear() {
@@ -535,16 +535,6 @@ public:
   }
 
 private:
-  int overwrite_if_larger() {
-    int edits = 0;
-    for (int k = 0; k < size(); k++) {
-      if (value_update[k] > value[k]) {
-        value[k] = value_update[k];
-        edits++;
-      }
-    }
-    return edits;
-  }
 
   void overwrite() {
     std::memcpy(value.data(), value_update.data(), sizeof(T) * value.size());
@@ -561,9 +551,10 @@ void mexFunction(int nlhs,
   const int arg_index_gridpoints = 1;
   const int arg_index_iterations = 2;
   const int arg_index_deltatime = 3;
+  const int arg_index_disctime = 4;
 
-  if (nrhs != 4 || nlhs > 6) {
-    mexErrMsgTxt("USAGE: [V, A, g1, g2, g3, g4] = acrobot_dpsolve(P, npts, itrs, dt);");
+  if (nrhs != 5 || nlhs > 6) {
+    mexErrMsgTxt("USAGE: [V, A, g1, g2, g3, g4] = acrobot_dpsolve(P, npts, itrs, dt, tdisc);");
   }
 
   if (!(isDoubleRealVector(prhs[arg_index_gridpoints]) && 
@@ -579,6 +570,10 @@ void mexFunction(int nlhs,
     mexErrMsgTxt("Expects dt to be real scalar");
   }
 
+  if (!isDoubleRealScalar(prhs[arg_index_disctime])) {
+    mexErrMsgTxt("Expects tdisc to be real scalar");
+  }
+
   const int itrs = (int) std::round(getDoubleScalar(prhs[arg_index_iterations]));
 
   if (itrs < 0) {
@@ -586,8 +581,15 @@ void mexFunction(int nlhs,
   }
 
   const double dt = getDoubleScalar(prhs[arg_index_deltatime]);
+
   if (dt <= 0.0) {
     mexErrMsgTxt("dt > 0 required");
+  }
+
+  const double tdisc = getDoubleScalar(prhs[arg_index_disctime]);
+  
+  if (tdisc <= 0.0) {
+    mexErrMsgTxt("tdisc > 0 required");
   }
 
   const double* pdims = mxGetPr(prhs[arg_index_gridpoints]);
@@ -619,6 +621,8 @@ void mexFunction(int nlhs,
   mexPrintf("dims       = %i, %i, %i, %i\n", acbdp.dim(0), acbdp.dim(1), acbdp.dim(2), acbdp.dim(3));
   mexPrintf("deltas     = %f, %f, %f, %f\n", acbdp.delta(0), acbdp.delta(1), acbdp.delta(2), acbdp.delta(3));
   mexPrintf("sizeof(T)  = %i (sizeof value element type)\n", acbdp.sizeofValueType());
+  mexPrintf("dt, tdisc  = %f [sec], %f [sec]\n", dt, tdisc);
+  mexPrintf("dt * itrs  = %f [sec] (itrs = %i)\n", dt * itrs, itrs);
 
   if (!acbdp.check_ind2sub2ind()) {
     mexErrMsgTxt("Self-check of ind2sub, sub2ind failed");
@@ -631,20 +635,16 @@ void mexFunction(int nlhs,
     const double avg_cell_dist = acbdp.averageCellDistance(&P, dt);
     mexPrintf("[%s]: <cell-delta> = %f\n", __func__, avg_cell_dist);
 
-    // (NOTE: one critical issue is the very first set of iterations -- require almost direct hits on target to proceed correctly)
     return;
   }
 
   acbdp.clear();
   acbdp.set_edge_value(-2.0 * itrs * dt);
-  //acbdp.initialize_terminal_swing(&P, 0.0);
-  acbdp.initialize_terminal(3);
 
-  //std::vector<double> ulevels = {-1.0, -0.5, 0.0, 0.5, +1.0};
   std::vector<double> ulevels = {-1.0, 0.0, +1.0};
 
   for (int i = 0; i < itrs; i++) {
-    if (!acbdp.update(&P, ulevels, dt)) break;
+    if (!acbdp.update(&P, ulevels, dt, tdisc)) break;
   }
 
   // Output 4D arrays have same memory layout as Octave so just linear copy
