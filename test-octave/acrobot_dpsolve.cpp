@@ -302,6 +302,7 @@ public:
               const std::vector<double>& ulevels,
               double dt,
               double tdisc,
+              double eptol = 1.0e-10,
               bool use_euler = false) 
   {
     acrobot::params localP(*P);
@@ -367,10 +368,12 @@ public:
 
     time += dt;
 
+    const double epdiff = sum_value_delta / std::fabs(updatesum);
+
     mexPrintf("[%s]: <value>=%e (lvls=%i, aedits=%i); bkwdtm=%f, eps(delta)=%e\n", 
-              __func__, updatesum / size(), numlevels, action_edits, time, sum_value_delta / std::fabs(updatesum));
+              __func__, updatesum / size(), numlevels, action_edits, time, epdiff);
     
-    return true;
+    return (action_edits == 0 && epdiff < eptol); // early stop condition
   }
 
   double wrap_angle_diff(double a) const {
@@ -639,12 +642,12 @@ void mexFunction(int nlhs,
   }
 
   acbdp.clear();
-  acbdp.set_edge_value(-2.0 * itrs * dt);
+  acbdp.set_edge_value(-1.0 * tdisc * 1000.0);
 
-  std::vector<double> ulevels = {-1.0, 0.0, +1.0};
+  std::vector<double> ulevels = {-1.0, -0.5, 0.0, 0.5, +1.0};
 
   for (int i = 0; i < itrs; i++) {
-    if (!acbdp.update(&P, ulevels, dt, tdisc)) break;
+    if (acbdp.update(&P, ulevels, dt, tdisc)) break;
   }
 
   // Output 4D arrays have same memory layout as Octave so just linear copy
