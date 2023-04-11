@@ -112,6 +112,10 @@ public:
     edge_value = ev;
   }
 
+  T get_edge_value() const {
+    return edge_value;
+  }
+
   int lookupindex(int i0, int i1, int i2, int i3) const {
     if (i2 < 0 || i2 >= dims[2]) return edge_value;
     if (i3 < 0 || i3 >= dims[3]) return edge_value;
@@ -382,6 +386,29 @@ public:
     return a;
   }
 
+  double autoEdgeValue(const acrobot::params* P, 
+                       double Etarget)
+  {
+    double minR = std::numeric_limits<T>::max();
+    for (int k = 0; k < size(); k++) {
+      int ik[4];
+      ind2sub(k, ik);
+      const double xk[4] = {grid_th1[ik[0]], 
+                            grid_th2[ik[1]], 
+                            grid_th1d[ik[2]], 
+                            grid_th2d[ik[3]]};
+
+      const double Rk = reward_swing(xk, P, Etarget);
+
+      if (Rk < minR) {
+        minR = Rk;
+      }
+    }
+
+    set_edge_value(minR);
+    return edge_value;
+  }
+
 /*
   void initialize_terminal(int cfgnum) 
   {
@@ -642,7 +669,8 @@ void mexFunction(int nlhs,
   }
 
   acbdp.clear();
-  acbdp.set_edge_value(-1.0 * tdisc * 1000.0);
+  acbdp.autoEdgeValue(&P, 0.0);
+  mexPrintf("auto edge value = %f\n", acbdp.get_edge_value());
 
   std::vector<double> ulevels = {-1.0, -0.5, 0.0, 0.5, +1.0};
 
