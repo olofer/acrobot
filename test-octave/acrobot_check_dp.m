@@ -43,15 +43,15 @@ if show_example_slice
   title('Action function slice');
 end
 
-dtsim = 2e-3; %DP.deltat; %5e-3;
+dtsim = 4e-3; %DP.deltat; %5e-3;
 N = 2e3;
 Z = NaN(N, 4);
 U = NaN(N, 1);
 T = dtsim * (0:(N - 1));
 %Z(1, :) = [-pi/2 - 1e-3, -pi/2 + 1e-3, 0, 0];
-%Z(1, :) = [pi/2 - 1e-3, pi/2 + 1e-3, 0, 0];
-Z(1, :) = [0, 0, 0, 0];
-%Z(1, :) = [0, 0, -1, -1];
+Z(1, :) = [pi/2 - 1e-3, pi/2 + 1e-3, 0, 0];
+%Z(1, :) = [0, 0, 0, 0];
+Z(1, :) = [0, 0, 2, 3];
 fprintf(1, 'simulating (dt=%f) for %i steps (DP dt=%f) ... \n', dtsim, N, DP.deltat);
 for t = 1:(N - 1)
   zt = Z(t, :);
@@ -91,3 +91,4 @@ for ii = -1:1
   line([T(1), T(end)], 2 * pi * ii + [pi/2, pi/2], 'Color', 'c', 'LineStyle', '--');
   line([T(1), T(end)], 2 * pi * ii + [-pi/2, -pi/2], 'Color', 'y', 'LineStyle', '-.');
 end 
+line([T(1), T(end)], [0, 0], 'Color', 'k', 'LineStyle', ':');

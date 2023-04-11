@@ -306,7 +306,8 @@ public:
               const std::vector<double>& ulevels,
               double dt,
               double tdisc,
-              double eptol = 1.0e-10,
+              double Etarget,
+              double eptol = 1.0e-9,
               bool use_euler = false) 
   {
     acrobot::params localP(*P);
@@ -330,7 +331,7 @@ public:
                             grid_th1d[ik[2]], 
                             grid_th2d[ik[3]]};
 
-      const double Rk = reward_swing(xk, &localP, 0.0);  // assume independence of u(a)
+      const double Rk = reward_swing(xk, &localP, Etarget);  // assume independence of u(a)
 
       double max_value = lowest_value;
       double max_value_clean = lowest_value;
@@ -453,14 +454,18 @@ public:
     const double Ek = acrobot::total_mechanical_energy(z, xy1, xy2, P);
     const double Esize = 1.0 + std::fabs(E);
 
-    const double v1x = std::cos(z[0]);
-    const double v1y = std::sin(z[0]);
-    const double v2x = std::cos(z[1]);
-    const double v2y = std::sin(z[1]);
+    //const double v1x = std::cos(z[0]);
+    //const double v1y = std::sin(z[0]);
+    //const double v2x = std::cos(z[1]);
+    //const double v2y = std::sin(z[1]);
 
-    const double dot12 = v1x * v2x + v1y * v2y; // |.| <= 1, want it to be 1
+    //const double dot12 = v1x * v2x + v1y * v2y; // |.| <= 1, want it to be 1
 
-    return -1.0 * (std::fabs(Ek - E) / Esize + (1.0 - dot12));
+    //return -1.0 * (std::fabs(Ek - E) / Esize + 5 * (1.0 - dot12));
+
+    const double delta_theta = wrap_angle_diff(z[0] - z[1]);
+    //return -1.0 * (std::fabs(Ek - E) / Esize + 5.0 * delta_theta * delta_theta);
+    return -1.0 * delta_theta * delta_theta / 2.0;
   }
 
   void clear() {
@@ -668,14 +673,16 @@ void mexFunction(int nlhs,
     return;
   }
 
+  const double Etarget = 0.0;
+
   acbdp.clear();
-  acbdp.autoEdgeValue(&P, 0.0);
+  acbdp.autoEdgeValue(&P, Etarget);
   mexPrintf("auto edge value = %f\n", acbdp.get_edge_value());
 
-  std::vector<double> ulevels = {-1.0, -0.5, 0.0, 0.5, +1.0};
+  std::vector<double> ulevels = {-1.0, 0.0, +1.0};
 
   for (int i = 0; i < itrs; i++) {
-    if (acbdp.update(&P, ulevels, dt, tdisc)) break;
+    if (acbdp.update(&P, ulevels, dt, tdisc, Etarget)) break;
   }
 
   // Output 4D arrays have same memory layout as Octave so just linear copy
