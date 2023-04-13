@@ -27,10 +27,13 @@ WebAssembly.instantiateStreaming(fetch('browser_sim.wasm'), importObject)
     var getFriction = results.instance.exports.getFriction;
     var getEnergy = results.instance.exports.getEnergy;
     var freezeTorque = results.instance.exports.freezeTorque;
+    var holdTorque = results.instance.exports.holdTorque;
 
     const jointWithFriction = 1;
     var applyJointLock = false;
     var refLockValue = 0.0;
+    var applyJointHold = false;
+    var refHoldValue = 0.0;
     
     function keyDownEvent(e)
     {
@@ -40,6 +43,7 @@ WebAssembly.instantiateStreaming(fetch('browser_sim.wasm'), importObject)
         if (key == 'z' || key == 'Z') {
             resetAcrobotState(0.0, 0.0, 0.0, 0.0);
             applyJointLock = false;
+            applyJointHold = false;
         }
 
         if (key == 'd' || key == 'D') {
@@ -48,6 +52,7 @@ WebAssembly.instantiateStreaming(fetch('browser_sim.wasm'), importObject)
                               0.0, 
                               0.0);
             applyJointLock = false;
+            applyJointHold = false;
         }
 
         if (key == 'u' || key == 'U') {
@@ -56,6 +61,7 @@ WebAssembly.instantiateStreaming(fetch('browser_sim.wasm'), importObject)
                               0.0, 
                               0.0);
             applyJointLock = false;
+            applyJointHold = false;
         }
 
         if (key == 'r' || key == 'R') {
@@ -64,10 +70,16 @@ WebAssembly.instantiateStreaming(fetch('browser_sim.wasm'), importObject)
                               0.0, 
                               0.0);
             applyJointLock = false;
+            applyJointHold = false;
         }
 
-        if (key == 'f' || key == 'F') {
+        if ((key == 'f' || key == 'F') && !applyJointHold) {
             applyJointLock = !applyJointLock;
+            applyTorque(0.0);
+        }
+
+        if ((key == 'h' || key == 'H') && !applyJointLock) {
+            applyJointHold = !applyJointHold;
             applyTorque(0.0);
         }
     
@@ -83,11 +95,13 @@ WebAssembly.instantiateStreaming(fetch('browser_sim.wasm'), importObject)
         {
             applyTorque(1.0);
             applyJointLock = false;
+            applyJointHold = false;
         }
         else if (code == 40) // down
         {
             applyTorque(-1.0);
             applyJointLock = false;
+            applyJointHold = false;
         }
     }
 
@@ -197,14 +211,19 @@ WebAssembly.instantiateStreaming(fetch('browser_sim.wasm'), importObject)
         if (applyJointLock) {
             ctx.fillText('locked at: ' + refLockValue.toFixed(3) + ' [rad]', 10.0, 100.0);
         }
+
+        if (applyJointHold) {
+            ctx.fillText('hold at: ' + refHoldValue.toFixed(3) + ' [rad]', 10.0, 100.0);
+        }
     }
 
     const lock_omega_nought = 2.0 * Math.PI / 0.005;
     const lock_feedback_zeta = 1.0;
+
+    const hold_omega_nought = 2.0 * Math.PI / 0.010;
+    const hold_feedback_zeta = 1.50;
     
-    //var fps = 60;
     var startTime = Date.now();
-    //var frameDuration = 1000 / fps;
     var delta = 0;
     const dt = 0.001;
     
@@ -224,6 +243,11 @@ WebAssembly.instantiateStreaming(fetch('browser_sim.wasm'), importObject)
                 applyTorque(freezeTorque(refLockValue, lock_omega_nought, lock_feedback_zeta));
             } else {
                 refLockValue = getTheta(0) - getTheta(1);
+            }
+            if (applyJointHold) {
+                applyTorque(holdTorque(refHoldValue, hold_omega_nought, hold_feedback_zeta));
+            } else {
+                refHoldValue = getTheta(1);
             }
             evolveAcrobot(dt);
             delta -= dt;

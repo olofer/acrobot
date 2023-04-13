@@ -97,6 +97,15 @@ struct AcrobotSim
     return Ieff * omega0 * (-1.0 * omega0 * y - 2.0 * zeta * yprime);
   }
 
+  double compute_hold_torque(double y0,
+                             double omega0, 
+                             double zeta = 1.0) const
+  {
+    const double y = theta2 - y0;
+    const double yprime = theta2dot;
+    return P.I2 * omega0 * (2.0 * zeta * yprime + omega0 * y);
+  }
+
 };
 
 static constexpr double nominal_gravity_acc = 9.82;
@@ -109,68 +118,68 @@ extern "C" {
 EMSCRIPTEN_KEEPALIVE
 double getRandomCoordinate()
 {
-    return emscripten_random();
+  return emscripten_random();
 }
 
 EMSCRIPTEN_KEEPALIVE
 double parrotDouble(double a)
 {
-    return a;
+  return a;
 }
 
 EMSCRIPTEN_KEEPALIVE
 void resetAcrobot()
 {
-    acb.t = 0.0;
-    acb.theta1 = 0.0;
-    acb.theta2 = 0.0;
-    acb.theta1dot = 0.0;
-    acb.theta2dot = 0.0;
-    acb.P.m1 = 1.0;
-    acb.P.L1 = 1.5;
-    acb.P.m2 = 0.5;
-    acb.P.L2 = 1.0;
-    acb.P.g = nominal_gravity_acc;
-    acb.P.u = 0.0;
-    acb.P.muA = acb.P.muB = 0.0;
-    acb.compute_Is();
-    acb.compute_cms();
+  acb.t = 0.0;
+  acb.theta1 = 0.0;
+  acb.theta2 = 0.0;
+  acb.theta1dot = 0.0;
+  acb.theta2dot = 0.0;
+  acb.P.m1 = 1.0;
+  acb.P.L1 = 1.5;
+  acb.P.m2 = 0.5;
+  acb.P.L2 = 1.0;
+  acb.P.g = nominal_gravity_acc;
+  acb.P.u = 0.0;
+  acb.P.muA = acb.P.muB = 0.0;
+  acb.compute_Is();
+  acb.compute_cms();
 }
 
 EMSCRIPTEN_KEEPALIVE
 double getTime(void)
 {
-    return acb.t;
+  return acb.t;
 }
 
 EMSCRIPTEN_KEEPALIVE
 double getEnergy(void)
 {
-    return acb.energy;
+  return acb.energy;
 }
 
 EMSCRIPTEN_KEEPALIVE
 double getTheta(int arm)
 {
-    return (arm == 0 ? acb.theta1 : acb.theta2);
+  return (arm == 0 ? acb.theta1 : acb.theta2);
 }
 
 EMSCRIPTEN_KEEPALIVE
 double getThetaDot(int arm)
 {
-    return (arm == 0 ? acb.theta1dot : acb.theta2dot);
+  return (arm == 0 ? acb.theta1dot : acb.theta2dot);
 }
 
 EMSCRIPTEN_KEEPALIVE
 double getLength(int arm)
 {
-    return (arm == 0 ? acb.P.L1 : acb.P.L2);
+  return (arm == 0 ? acb.P.L1 : acb.P.L2);
 }
 
 EMSCRIPTEN_KEEPALIVE
 void evolveAcrobot(double dt)
 {
-    acb.evolve(dt);
+  acb.evolve(dt);
 }
 
 EMSCRIPTEN_KEEPALIVE
@@ -179,25 +188,25 @@ void resetAcrobotState(double th1,
                        double th1d, 
                        double th2d)
 {
-    acb.t = 0.0;
-    acb.theta1 = th1;
-    acb.theta2 = th2;
-    acb.theta1dot = th1d;
-    acb.theta2dot = th2d;
-    acb.compute_cms();
-    acb.P.u = 0.0;
+  acb.t = 0.0;
+  acb.theta1 = th1;
+  acb.theta2 = th2;
+  acb.theta1dot = th1d;
+  acb.theta2dot = th2d;
+  acb.compute_cms();
+  acb.P.u = 0.0;
 }
 
 EMSCRIPTEN_KEEPALIVE
 void applyTorque(double tau)
 {
-    acb.P.u = tau;
+  acb.P.u = tau;
 }
 
 EMSCRIPTEN_KEEPALIVE
 double getTorque(void)
 {
-    return acb.P.u;
+  return acb.P.u;
 }
 
 EMSCRIPTEN_KEEPALIVE
@@ -205,26 +214,34 @@ double freezeTorque(double y0,
                     double omega0, 
                     double zeta)
 {
-    return acb.compute_freeze_torque(y0, omega0, zeta);
+  return acb.compute_freeze_torque(y0, omega0, zeta);
+}
+
+EMSCRIPTEN_KEEPALIVE
+double holdTorque(double y0, 
+                  double omega0, 
+                  double zeta)
+{
+  return acb.compute_hold_torque(y0, omega0, zeta);
 }
 
 EMSCRIPTEN_KEEPALIVE
 void increaseFriction(int joint, double inc)
 {
-    if (joint == 0) {
-      acb.P.muA += inc;
-      if (acb.P.muA < 0.0) acb.P.muA = 0.0;
-    }
-    else {
-      acb.P.muB += inc;
-      if (acb.P.muB < 0.0) acb.P.muB = 0.0;
-    }
+  if (joint == 0) {
+    acb.P.muA += inc;
+    if (acb.P.muA < 0.0) acb.P.muA = 0.0;
+  }
+  else {
+    acb.P.muB += inc;
+    if (acb.P.muB < 0.0) acb.P.muB = 0.0;
+  }
 }
 
 EMSCRIPTEN_KEEPALIVE
 double getFriction(int joint)
 {
-    return (joint == 0 ? acb.P.muA : acb.P.muB);
+  return (joint == 0 ? acb.P.muA : acb.P.muB);
 }
 
 } // close extern "C"
