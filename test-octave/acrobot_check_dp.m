@@ -43,15 +43,15 @@ if show_example_slice
   title('Action function slice');
 end
 
-dtsim = 4e-3; %DP.deltat; %5e-3;
-N = 2e3;
+dtsim = 2e-3; %DP.deltat; %5e-3;
+N = 1e3;
 Z = NaN(N, 4);
 U = NaN(N, 1);
 T = dtsim * (0:(N - 1));
 %Z(1, :) = [-pi/2 - 1e-3, -pi/2 + 1e-3, 0, 0];
-Z(1, :) = [pi/2 - 1e-3, pi/2 + 1e-3, 0, 0];
-%Z(1, :) = [0, 0, 0, 0];
-Z(1, :) = [0, 0, 2, 3];
+%Z(1, :) = [pi/2 - 1e-3, pi/2 + 1e-3, 0, 0];
+Z(1, :) = [0, 0, 0, 0];
+%Z(1, :) = [0, 0, 2, 3];
 fprintf(1, 'simulating (dt=%f) for %i steps (DP dt=%f) ... \n', dtsim, N, DP.deltat);
 for t = 1:(N - 1)
   zt = Z(t, :);

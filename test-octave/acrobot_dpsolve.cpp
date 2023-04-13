@@ -313,6 +313,7 @@ public:
     acrobot::params localP(*P);
 
     const double gamma = std::exp(-1.0 * dt / tdisc); // 1-step (dt) survival probability; rate = 1/tdisc
+    const double dtN = dt * 1.0 / (1.0 - gamma); // ~ tdisc (unused at this time)
 
     const double epsa = 1.0e-12;
     const double lowest_value = std::numeric_limits<double>::lowest();
@@ -463,9 +464,21 @@ public:
 
     //return -1.0 * (std::fabs(Ek - E) / Esize + 5 * (1.0 - dot12));
 
+    const double close_angle = 2.0 * _one_pi / 12.0;
     const double delta_theta = wrap_angle_diff(z[0] - z[1]);
+    const bool angles_are_close = std::fabs(delta_theta) < close_angle;
+    const bool angle_1_is_upright = std::fabs(wrap_angle_diff(z[0] - _one_pi / 2.0)) < close_angle;
+    const bool angle_2_is_upright = std::fabs(wrap_angle_diff(z[1] - _one_pi / 2.0)) < close_angle;
+    const bool energy_level_is_ok = std::fabs(Ek - E) / Esize < 0.10;
+
     //return -1.0 * (std::fabs(Ek - E) / Esize + 5.0 * delta_theta * delta_theta);
-    return -1.0 * delta_theta * delta_theta / 2.0;
+    //return -1.0 * delta_theta * delta_theta / 2.0;
+    //return -1.0 * (std::fabs(Ek - E) / Esize);
+
+    // Try indicator function reward this time
+    //return (angles_are_close && angle_1_is_upright ? 0.0 : -1.0);
+    return (angles_are_close && energy_level_is_ok ? 0.0 : -1.0);
+    //return (angle_1_is_upright && angle_2_is_upright ? 0.0 : -1.0);
   }
 
   void clear() {
@@ -473,6 +486,12 @@ public:
     std::memset(value.data(), 0, sizeof(T) * value.size());
     std::memset(value_update.data(), 0, sizeof(T) * value_update.size());
     std::memset(action.data(), 0, sizeof(int8_t) * action.size());
+  }
+
+  void value_from_edge() {
+    for (int k = 0; k < size(); k++) {
+      value[k] = edge_value;
+    }
   }
 
   void test_scatter_interp(double putval) {
@@ -679,7 +698,10 @@ void mexFunction(int nlhs,
   acbdp.autoEdgeValue(&P, Etarget);
   mexPrintf("auto edge value = %f\n", acbdp.get_edge_value());
 
-  std::vector<double> ulevels = {-1.0, 0.0, +1.0};
+  acbdp.value_from_edge();
+
+  //std::vector<double> ulevels = {-1.0, -0.5, 0.0, 0.5, +1.0};
+  std::vector<double> ulevels = {-4.0, -2.0, -1.0, -0.5, -0.25, 0.0, 0.25, 0.5, +1.0, 2.0, 4.0};
 
   for (int i = 0; i < itrs; i++) {
     if (acbdp.update(&P, ulevels, dt, tdisc, Etarget)) break;
