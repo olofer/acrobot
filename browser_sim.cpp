@@ -244,4 +244,14 @@ double getFriction(int joint)
   return (joint == 0 ? acb.P.muA : acb.P.muB);
 }
 
+EMSCRIPTEN_KEEPALIVE
+void setFriction(int joint, double mu)
+{
+  if (joint == 0) {
+    acb.P.muA = mu;
+  } else if (joint == 1) {
+    acb.P.muB = mu;
+  }
+}
+
 } // close extern "C"

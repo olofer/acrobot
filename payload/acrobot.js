@@ -25,11 +25,15 @@ WebAssembly.instantiateStreaming(fetch('browser_sim.wasm'), importObject)
     var getTorque = results.instance.exports.getTorque;
     var increaseFriction = results.instance.exports.increaseFriction;
     var getFriction = results.instance.exports.getFriction;
+    var setFriction = results.instance.exports.setFriction;
     var getEnergy = results.instance.exports.getEnergy;
     var freezeTorque = results.instance.exports.freezeTorque;
     var holdTorque = results.instance.exports.holdTorque;
 
+    const refAngleDelta = 2.0 * Math.PI / 24.0;
     const jointWithFriction = 1;
+    const jointWithBrake = 0;
+
     var applyJointLock = false;
     var refLockValue = 0.0;
     var applyJointHold = false;
@@ -82,6 +86,11 @@ WebAssembly.instantiateStreaming(fetch('browser_sim.wasm'), importObject)
             applyJointHold = !applyJointHold;
             applyTorque(0.0);
         }
+
+        if (key == 'b' || key == 'B')
+        {
+            setFriction(jointWithBrake, 0.50);
+        }
     
         if (code == 39) // right
         {
@@ -93,21 +102,36 @@ WebAssembly.instantiateStreaming(fetch('browser_sim.wasm'), importObject)
         }
         else if (code == 38) // up
         {
-            applyTorque(1.0);
-            applyJointLock = false;
-            applyJointHold = false;
+            if (applyJointLock) {
+                refLockValue += refAngleDelta;
+            } else if (applyJointHold) {
+                refHoldValue += refAngleDelta;
+            } else {
+                applyTorque(1.0);
+            }
         }
         else if (code == 40) // down
         {
-            applyTorque(-1.0);
-            applyJointLock = false;
-            applyJointHold = false;
+            if (applyJointLock) {
+                refLockValue -= refAngleDelta;
+            } else if (applyJointHold) {
+                refHoldValue -= refAngleDelta;
+            } else {
+                applyTorque(-1.0);
+            }
         }
     }
 
     function keyUpEvent(e)
     {
         var code = e.keyCode;
+        var key = e.key;
+
+        if (key == 'b' || key == 'B')
+        {
+            setFriction(jointWithBrake, 0.0);
+        }
+
         if (code == 39) // right
         {
 
@@ -202,8 +226,9 @@ WebAssembly.instantiateStreaming(fetch('browser_sim.wasm'), importObject)
         const torque = getTorque();
         ctx.fillText('torque: ' + torque.toFixed(3) + ' [N m]', 10.0, 40.0);
 
-        const mu = getFriction(jointWithFriction);
-        ctx.fillText('friction: ' + mu.toFixed(3) + ' [N m s]', 10.0, 60.0);
+        const muA = getFriction(jointWithBrake);
+        const muB = getFriction(jointWithFriction);
+        ctx.fillText('friction: ' + muA.toFixed(3) + ', ' + muB.toFixed(3) + ' [N m s]', 10.0, 60.0);
 
         const E = getEnergy();
         ctx.fillText('energy: ' + E.toFixed(3) + ' [J]', 10.0, 80.0);
