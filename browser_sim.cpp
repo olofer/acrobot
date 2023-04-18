@@ -254,4 +254,11 @@ void setFriction(int joint, double mu)
   }
 }
 
+EMSCRIPTEN_KEEPALIVE
+double directionIndicator() // +1 if climbing up, -1 if falling down (or still)
+{
+  const double ydot = std::cos(acb.theta1) * acb.theta1dot;
+  return (ydot > 0.0 ? +1.0 : -1.0);
+}
+
 } // close extern "C"

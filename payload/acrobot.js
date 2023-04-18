@@ -29,6 +29,7 @@ WebAssembly.instantiateStreaming(fetch('browser_sim.wasm'), importObject)
     var getEnergy = results.instance.exports.getEnergy;
     var freezeTorque = results.instance.exports.freezeTorque;
     var holdTorque = results.instance.exports.holdTorque;
+    var directionIndicator = results.instance.exports.directionIndicator;
 
     const refAngleDelta = 2.0 * Math.PI / 24.0;
     const jointWithFriction = 1;
@@ -240,6 +241,9 @@ WebAssembly.instantiateStreaming(fetch('browser_sim.wasm'), importObject)
         if (applyJointHold) {
             ctx.fillText('hold at: ' + refHoldValue.toFixed(3) + ' [rad]', 10.0, 100.0);
         }
+
+        if (directionIndicator() > 0.0) ctx.fillText('climbing', 200.0, 20.0);
+          else ctx.fillText('falling', 200.0, 20.0);
     }
 
     const lock_omega_nought = 2.0 * Math.PI / 0.005;
