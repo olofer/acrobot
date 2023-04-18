@@ -39,6 +39,17 @@ WebAssembly.instantiateStreaming(fetch('browser_sim.wasm'), importObject)
     var refLockValue = 0.0;
     var applyJointHold = false;
     var refHoldValue = 0.0;
+
+    var pumpMode = false;
+    var pumpState = 0.0;
+    var refractoryTime = 0.0;
+    const debounceTime = 0.10 * 2.0 * Math.PI * Math.sqrt(getLength(0) / 9.82);
+
+    function commonsReset() {
+        applyJointLock = false;
+        applyJointHold = false;
+        pumpMode = false;
+    }
     
     function keyDownEvent(e)
     {
@@ -47,8 +58,7 @@ WebAssembly.instantiateStreaming(fetch('browser_sim.wasm'), importObject)
 
         if (key == 'z' || key == 'Z') {
             resetAcrobotState(0.0, 0.0, 0.0, 0.0);
-            applyJointLock = false;
-            applyJointHold = false;
+            commonsReset();
         }
 
         if (key == 'd' || key == 'D') {
@@ -56,8 +66,7 @@ WebAssembly.instantiateStreaming(fetch('browser_sim.wasm'), importObject)
                               0.01 * (Math.random() - 0.5) - Math.PI / 2, 
                               0.0, 
                               0.0);
-            applyJointLock = false;
-            applyJointHold = false;
+            commonsReset();
         }
 
         if (key == 'u' || key == 'U') {
@@ -65,8 +74,7 @@ WebAssembly.instantiateStreaming(fetch('browser_sim.wasm'), importObject)
                               0.01 * (Math.random() - 0.5) + Math.PI / 2, 
                               0.0, 
                               0.0);
-            applyJointLock = false;
-            applyJointHold = false;
+            commonsReset();
         }
 
         if (key == 'r' || key == 'R') {
@@ -74,18 +82,37 @@ WebAssembly.instantiateStreaming(fetch('browser_sim.wasm'), importObject)
                               2.0 * Math.PI * Math.random(), 
                               0.0, 
                               0.0);
-            applyJointLock = false;
+            commonsReset();
+        }
+
+        if (key == 'p' || key == 'P') {
+            if (pumpMode) {
+                pumpMode = false;
+                return;
+            }
+            const th1 = -1.0 * Math.PI / 2.0 - 1.0 * Math.random() * Math.PI / 4.0 - Math.PI / 8.0;
+            resetAcrobotState(th1, 
+                              th1 - Math.PI / 2.0 + refAngleDelta, 
+                              0.0, 
+                              0.0);
+            refLockValue = getTheta(0) - getTheta(1);
+            applyJointLock = true;
             applyJointHold = false;
+            pumpState = directionIndicator();
+            refractoryTime = 0.0;
+            pumpMode = true;
         }
 
         if ((key == 'f' || key == 'F') && !applyJointHold) {
             applyJointLock = !applyJointLock;
             applyTorque(0.0);
+            pumpMode = false;
         }
 
         if ((key == 'h' || key == 'H') && !applyJointLock) {
             applyJointHold = !applyJointHold;
             applyTorque(0.0);
+            pumpMode = false;
         }
 
         if (key == 'b' || key == 'B')
@@ -235,15 +262,14 @@ WebAssembly.instantiateStreaming(fetch('browser_sim.wasm'), importObject)
         ctx.fillText('energy: ' + E.toFixed(3) + ' [J]', 10.0, 80.0);
 
         if (applyJointLock) {
-            ctx.fillText('locked at: ' + refLockValue.toFixed(3) + ' [rad]', 10.0, 100.0);
+            var str = 'locked at: ' + refLockValue.toFixed(3) + ' [rad]';
+            if (pumpMode) str += ' (pump mode)';
+            ctx.fillText(str, 10.0, 100.0);
         }
 
         if (applyJointHold) {
             ctx.fillText('hold at: ' + refHoldValue.toFixed(3) + ' [rad]', 10.0, 100.0);
         }
-
-        if (directionIndicator() > 0.0) ctx.fillText('climbing', 200.0, 20.0);
-          else ctx.fillText('falling', 200.0, 20.0);
     }
 
     const lock_omega_nought = 2.0 * Math.PI / 0.005;
@@ -268,6 +294,22 @@ WebAssembly.instantiateStreaming(fetch('browser_sim.wasm'), importObject)
         delta += elapsedTimeSeconds;
 
         while (delta >= 0.0) {
+            if (applyJointLock && pumpMode) {
+                const presentDirection = directionIndicator();
+                if (pumpState < 0.0 && presentDirection > 0.0 && refractoryTime > debounceTime) {
+                    // "shorten" pendulum
+                    refLockValue += 2.0 * refAngleDelta;
+                    pumpState = presentDirection;
+                    refractoryTime = 0.0;
+                }
+                if (pumpState > 0.0 && presentDirection < 0.0 && refractoryTime > debounceTime) {
+                    // "lengthen" pendulum
+                    refLockValue -= 2.0 * refAngleDelta;
+                    pumpState = presentDirection;
+                    refractoryTime = 0.0;
+                }
+                refractoryTime += dt;
+            }
             if (applyJointLock) {
                 applyTorque(freezeTorque(refLockValue, lock_omega_nought, lock_feedback_zeta));
             } else {

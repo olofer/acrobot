@@ -13,6 +13,7 @@ Run it directly online <https://raw.githack.com/olofer/acrobot/main/payload/inde
 - `F` toggle lock of the arm relative angle
 - `H` toggle hold of the second arm absolute angle
 - `B` apply brake friction at main joint
+- `P` reset and enter pump-mode (or exit pump-mode into lock mode) 
 
 ## Build WebAssembly & run locally
 Requires (emscripten) `emcc` compiler and `emrun` utility. Scripts may or may not assume a WSL2 environment.
