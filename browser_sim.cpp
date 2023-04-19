@@ -255,9 +255,18 @@ void setFriction(int joint, double mu)
 }
 
 EMSCRIPTEN_KEEPALIVE
-double directionIndicator() // +1 if climbing up, -1 if falling down (or still)
+double cosineAlpha(double theta1, double theta2)
 {
-  const double ydot = std::cos(acb.theta1) * acb.theta1dot;
+  double CoM[2];
+  double cosa = 0.0;
+  acrobot::total_cartesian_CoM(CoM, &cosa, theta1, theta2, &acb.P);
+  return cosa;
+}
+
+EMSCRIPTEN_KEEPALIVE
+double directionIndicator(double alpha) // +1 if climbing up, -1 if falling down (or still)
+{
+  const double ydot = std::cos(acb.theta1 + alpha) * acb.theta1dot;
   return (ydot > 0.0 ? +1.0 : -1.0);
 }
 

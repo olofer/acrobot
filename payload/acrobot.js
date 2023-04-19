@@ -29,6 +29,7 @@ WebAssembly.instantiateStreaming(fetch('browser_sim.wasm'), importObject)
     var getEnergy = results.instance.exports.getEnergy;
     var freezeTorque = results.instance.exports.freezeTorque;
     var holdTorque = results.instance.exports.holdTorque;
+    var cosineAlpha = results.instance.exports.cosineAlpha;
     var directionIndicator = results.instance.exports.directionIndicator;
 
     const refAngleDelta = 2.0 * Math.PI / 24.0;
@@ -43,7 +44,8 @@ WebAssembly.instantiateStreaming(fetch('browser_sim.wasm'), importObject)
     var pumpMode = false;
     var pumpState = 0.0;
     var refractoryTime = 0.0;
-    const debounceTime = 0.10 * 2.0 * Math.PI * Math.sqrt(getLength(0) / 9.82);
+    const debounceTime = 0.10 * 2.0 * Math.PI * Math.sqrt(getLength(0) / 9.82) / 2.0;
+    var offsetAlpha = 0.0;
 
     function commonsReset() {
         applyJointLock = false;
@@ -90,7 +92,8 @@ WebAssembly.instantiateStreaming(fetch('browser_sim.wasm'), importObject)
                 pumpMode = false;
                 return;
             }
-            const th1 = -1.0 * Math.PI / 2.0 - 1.0 * Math.random() * Math.PI / 4.0 - Math.PI / 8.0;
+            //const th1 = -1.0 * Math.PI / 2.0 - 1.0 * Math.random() * Math.PI / 4.0 - Math.PI / 8.0;
+            const th1 = -1.0 * Math.PI / 2.0 + 2.0 * (Math.random() - 0.5) * Math.PI / 4.0;
             resetAcrobotState(th1, 
                               th1 - Math.PI / 2.0 + refAngleDelta, 
                               0.0, 
@@ -98,7 +101,9 @@ WebAssembly.instantiateStreaming(fetch('browser_sim.wasm'), importObject)
             refLockValue = getTheta(0) - getTheta(1);
             applyJointLock = true;
             applyJointHold = false;
-            pumpState = directionIndicator();
+            offsetAlpha = -1.0 * Math.acos(cosineAlpha(0.0, Math.PI / 2));
+            //console.log('offsetAlpha = ' + (offsetAlpha * 180.0 / Math.PI).toFixed(3) + ' deg.');
+            pumpState = directionIndicator(offsetAlpha);
             refractoryTime = 0.0;
             pumpMode = true;
         }
@@ -185,7 +190,10 @@ WebAssembly.instantiateStreaming(fetch('browser_sim.wasm'), importObject)
     
     resetAcrobot();
 
-    console.log([getLength(0), getLength(1)]);
+    console.log(['L1=' + getLength(0), 'L2=' + getLength(1)]);
+    console.log([cosineAlpha(0.0, Math.PI / 2), 
+                 Math.acos(cosineAlpha(0.0, Math.PI / 2)) * 180 / Math.PI]);
+    console.log('debounce time = ' + debounceTime.toFixed(3));
 
     function draw(canvas, ctx)
     {
@@ -295,7 +303,7 @@ WebAssembly.instantiateStreaming(fetch('browser_sim.wasm'), importObject)
 
         while (delta >= 0.0) {
             if (applyJointLock && pumpMode) {
-                const presentDirection = directionIndicator();
+                const presentDirection = directionIndicator(offsetAlpha);
                 if (pumpState < 0.0 && presentDirection > 0.0 && refractoryTime > debounceTime) {
                     // "shorten" pendulum
                     refLockValue += 2.0 * refAngleDelta;

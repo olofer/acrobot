@@ -209,6 +209,41 @@ double total_mechanical_energy(const double* z,
   return (Krot + Klin + Vgra);
 }
 
+void total_cartesian_CoM(double* xy,
+                         double* cosa,
+                         double theta1, 
+                         double theta2, 
+                         const params* parms)
+{
+  const double hL1 = parms->L1 / 2.0;
+  const double sn1 = std::sin(theta1);
+  const double cs1 = std::cos(theta1);
+
+  const double x1 = cs1 * hL1;
+  const double y1 = sn1 * hL1;
+
+  const double hL2 = parms->L2 / 2.0;
+  const double sn2 = std::sin(theta2);
+  const double cs2 = std::cos(theta2);
+
+  const double x2 = 2.0 * x1 + cs2 * hL2;
+  const double y2 = 2.0 * y1 + sn2 * hL2;
+
+  const double M1 = parms->m1;
+  const double M2 = parms->m2;
+  const double M = M1 + M2;
+
+  xy[0] = (M1 * x1 + M2 * x2) / M;
+  xy[1] = (M1 * y1 + M2 * y2) / M; 
+
+  if (cosa == nullptr) return;
+
+  const double dot12 = xy[0] * x1 + xy[1] * y1;
+  const double norm1sq = xy[0] * xy[0] + xy[1] * xy[1];
+  const double norm2sq = x1 * x1 + y1 * y1;
+  *cosa = dot12 / std::sqrt(norm1sq * norm2sq);
+}
+
 void step_euler(double* znext,
                 const double* znow,
                 double dt, 
