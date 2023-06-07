@@ -116,18 +116,6 @@ static AcrobotSim acb;
 extern "C" {
 
 EMSCRIPTEN_KEEPALIVE
-double getRandomCoordinate()
-{
-  return emscripten_random();
-}
-
-EMSCRIPTEN_KEEPALIVE
-double parrotDouble(double a)
-{
-  return a;
-}
-
-EMSCRIPTEN_KEEPALIVE
 void resetAcrobot()
 {
   acb.t = 0.0;

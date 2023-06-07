@@ -1,19 +1,9 @@
 
-var importObject = {
-    env: {
-        emscripten_random: function()
-        {
-            return Math.random();
-        },
-    },
-    wasi_snapshot_preview1: {}
-};
+var importObject = { env: { }, };
 
 WebAssembly.instantiateStreaming(fetch('browser_sim.wasm'), importObject)
 .then((results) =>
 {
-    var getRandomCoordinate = results.instance.exports.getRandomCoordinate;
-    var parrotDouble = results.instance.exports.parrotDouble;
     var getTheta = results.instance.exports.getTheta;
     var getThetaDot = results.instance.exports.getThetaDot;
     var getLength = results.instance.exports.getLength;
@@ -182,13 +172,13 @@ WebAssembly.instantiateStreaming(fetch('browser_sim.wasm'), importObject)
             applyTorque(0.0);
         }
     }
-
-    console.log(parrotDouble(-1.2345));
-    console.log(getRandomCoordinate());
-
-    console.log([getLength(0), getLength(1)]);
-    
+ 
     resetAcrobot();
+    resetAcrobotState(0.01 * (Math.random() - 0.5) + Math.PI / 2, 
+                      0.01 * (Math.random() - 0.5) + Math.PI / 2, 
+                      0.0, 
+                      0.0);
+    commonsReset();
 
     console.log(['L1=' + getLength(0), 'L2=' + getLength(1)]);
     console.log([cosineAlpha(0.0, Math.PI / 2), 
